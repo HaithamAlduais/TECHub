@@ -1,0 +1,262 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+// ── USERS ─────────────────────────────────────────────────────────────
+model User {
+  id                 String               @id @default(uuid())
+  firebaseUid        String               @unique @map("firebase_uid")
+  email              String
+  publicEmail        String?              @map("public_email")
+  phone              String?
+  name               String
+  photoUrl           String?              @map("photo_url")
+  bio                String?
+  targetRole         String?              @map("target_role")
+  location           String?
+  country            String?
+  timezone           String?
+  languagePref       String               @default("en") @map("language_pref")
+  portfolioUrl       String?              @map("portfolio_url")
+  twitterUrl         String?              @map("twitter_url")
+  linkedinUrl        String?              @map("linkedin_url")
+  availability       String               @default("not_available")
+  salaryMin          Int?                 @map("salary_min")
+  salaryMax          Int?                 @map("salary_max")
+  languagesSpoken    Json?                @map("languages_spoken")
+  tokenBalance       Int                  @default(0) @map("token_balance")
+  openToWork         Boolean              @default(false) @map("open_to_work")
+  onboardingDone     Boolean              @default(false) @map("onboarding_done")
+  createdAt          DateTime             @default(now()) @map("created_at")
+
+  // Relations
+  tokenTransactions  TokenTransaction[]
+  platformConnections PlatformConnection[]
+  profileItems       ProfileItem[]
+  skills             Skill[]
+  certificates       Certificate[]
+  opportunityMatches OpportunityMatch[]
+  skillTrees         SkillTree[]
+  repositories       Repository[]
+
+  @@map("users")
+}
+
+// ── TOKEN TRANSACTIONS ────────────────────────────────────────────────
+model TokenTransaction {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  action          String
+  amount          Int
+  balanceAfter    Int      @map("balance_after")
+  stripePaymentId String?  @map("stripe_payment_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("token_transactions")
+}
+
+// ── PLATFORM CONNECTIONS ──────────────────────────────────────────────
+model PlatformConnection {
+  id             String    @id @default(uuid())
+  userId         String    @map("user_id")
+  platform       String
+  accessToken    String?   @map("access_token")
+  platformUserId String?   @map("platform_user_id")
+  username       String?
+  lastSyncedAt   DateTime? @map("last_synced_at")
+  status         String    @default("pending")
+  rawData        Json?     @map("raw_data")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositories Repository[]
+
+  @@map("platform_connections")
+}
+
+// ── PROFILE ITEMS ─────────────────────────────────────────────────────
+model ProfileItem {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  type            String
+  title           String
+  organization    String?
+  startDate       DateTime? @map("start_date")
+  endDate         DateTime? @map("end_date")
+  description     String?
+  trustTier       String    @default("self_reported") @map("trust_tier")
+  sourcePlatform  String?   @map("source_platform")
+  confirmedByUser Boolean   @default(false) @map("confirmed_by_user")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profile_items")
+}
+
+// ── SKILLS ────────────────────────────────────────────────────────────
+model Skill {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  name            String
+  score           Int      @default(0)
+  trustTier       String   @default("self_reported") @map("trust_tier")
+  evidenceCount   Int      @default(0) @map("evidence_count")
+  githubWeight    Float    @default(0) @map("github_weight")
+  challengeWeight Float    @default(0) @map("challenge_weight")
+  certWeight      Float    @default(0) @map("cert_weight")
+  communityWeight Float    @default(0) @map("community_weight")
+  lastUpdated     DateTime @default(now()) @map("last_updated")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("skills")
+}
+
+// ── CERTIFICATES ──────────────────────────────────────────────────────
+model Certificate {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  fileUrl         String    @map("file_url")
+  title           String?
+  issuer          String?
+  issueDate       DateTime? @map("issue_date")
+  aiVerified      Boolean   @default(false) @map("ai_verified")
+  aiVerifiedAt    DateTime? @map("ai_verified_at")
+  skillsExtracted Json?     @map("skills_extracted")
+  rawText         String?   @map("raw_text")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("certificates")
+}
+
+// ── OPPORTUNITIES ─────────────────────────────────────────────────────
+model Opportunity {
+  id             String    @id @default(uuid())
+  type           String
+  title          String
+  organization   String?
+  description    String?
+  location       String?
+  country        String?
+  remoteOk       Boolean   @default(false) @map("remote_ok")
+  salaryMin      Int?      @map("salary_min")
+  salaryMax      Int?      @map("salary_max")
+  prize          String?
+  startDate      DateTime? @map("start_date")
+  endDate        DateTime? @map("end_date")
+  applyUrl       String?   @map("apply_url")
+  source         String    @default("scraped")
+  autoApply      Boolean   @default(false) @map("auto_apply")
+  requiredSkills Json?     @map("required_skills")
+  tags           Json?
+  scrapedAt      DateTime  @default(now()) @map("scraped_at")
+  expiresAt      DateTime? @map("expires_at")
+
+  matches OpportunityMatch[]
+
+  @@map("opportunities")
+}
+
+// ── OPPORTUNITY MATCHES ───────────────────────────────────────────────
+model OpportunityMatch {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  opportunityId  String   @map("opportunity_id")
+  matchScore     Float    @map("match_score")
+  matchedSkills  Json?    @map("matched_skills")
+  missingSkills  Json?    @map("missing_skills")
+  calculatedAt   DateTime @default(now()) @map("calculated_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@map("opportunity_matches")
+}
+
+// ── SKILL TREES ───────────────────────────────────────────────────────
+model SkillTree {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  targetRole  String   @map("target_role")
+  generatedAt DateTime @default(now()) @map("generated_at")
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nodes SkillTreeNode[]
+
+  @@map("skill_trees")
+}
+
+model SkillTreeNode {
+  id            String    @id @default(uuid())
+  treeId        String    @map("tree_id")
+  skill         String
+  parentNodeId  String?   @map("parent_node_id")
+  orderIndex    Int       @map("order_index")
+  status        String    @default("locked")
+  completedAt   DateTime? @map("completed_at")
+  autoCompleted Boolean   @default(false) @map("auto_completed")
+
+  tree      SkillTree          @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  parent    SkillTreeNode?     @relation("NodeChildren", fields: [parentNodeId], references: [id])
+  children  SkillTreeNode[]    @relation("NodeChildren")
+  resources SkillTreeResource[]
+
+  @@map("skill_tree_nodes")
+}
+
+model SkillTreeResource {
+  id             String  @id @default(uuid())
+  nodeId         String  @map("node_id")
+  title          String
+  url            String
+  type           String  @default("course")
+  ideProjectId   String? @map("ide_project_id")
+  provider       String?
+  price          String?
+  estimatedHours Int?    @map("estimated_hours")
+  aiSuggested    Boolean @default(true) @map("ai_suggested")
+
+  node SkillTreeNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@map("skill_tree_resources")
+}
+
+// ── REPOSITORIES ──────────────────────────────────────────────────────
+model Repository {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  connectionId String    @map("connection_id")
+  repoName     String    @map("repo_name")
+  language     String?
+  stars        Int       @default(0)
+  commits12mo  Int       @default(0) @map("commits_12mo")
+  qualityScore Float     @default(0) @map("quality_score")
+  lastPushed   DateTime? @map("last_pushed")
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection PlatformConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@map("repositories")
+}
+
+// ── ADMIN ACTIONS ─────────────────────────────────────────────────────
+model AdminAction {
+  id          String   @id @default(uuid())
+  adminId     String   @map("admin_id")
+  actionType  String   @map("action_type")
+  targetType  String   @map("target_type")
+  targetId    String   @map("target_id")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("admin_actions")
+}
