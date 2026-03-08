@@ -1,0 +1,31 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalEnv": [
+    "NODE_ENV",
+    "DATABASE_URL",
+    "REDIS_URL",
+    "FIREBASE_PROJECT_ID",
+    "OPENAI_API_KEY",
+    "PINECONE_API_KEY",
+    "STRIPE_SECRET_KEY",
+    "CLOUDFLARE_R2_BUCKET",
+    "CLOUDFLARE_R2_ACCESS_KEY",
+    "CLOUDFLARE_R2_SECRET_KEY"
+  ],
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "test": {
+      "dependsOn": ["^test"]
+    }
+  }
+}

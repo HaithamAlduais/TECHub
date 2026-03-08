@@ -1,0 +1,9 @@
+{
+  "name": "@techub/payment",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "python run.py",
+    "install:python": "pip install -r requirements.txt"
+  }
+}
