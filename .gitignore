@@ -1,45 +1,56 @@
-# Dependencies
+# dependencies
 node_modules/
-.pnpm-store/
-
-# Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-dist/
-build/
+*.pyc
 .venv/
 venv/
-env/
 
-# Environment variables - NEVER commit these
-.env
-.env.local
-.env.production
-.env.*.local
-
-# Next.js
+# next.js
 .next/
 out/
 
-# Turborepo
-.turbo/
+# production
+build/
+dist/
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# turbo
+.turbo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
 
-# IDE
-.cursor/
-.vscode/
-*.swp
-
-# Logs
-*.log
-npm-debug.log*
-
-# Testing
-coverage/
+# Python
+*.egg-info/
+.eggs/
+*.egg
+.mypy_cache/
 .pytest_cache/
-htmlcov/
+
+# Docker
+docker-compose.override.yml

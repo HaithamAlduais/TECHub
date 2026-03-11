@@ -1,20 +1,26 @@
 from pydantic_settings import BaseSettings
-from functools import lru_cache
+from pathlib import Path
+from dotenv import load_dotenv
+
+ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
+if ROOT_ENV.exists():
+    load_dotenv(ROOT_ENV)
 
 
 class Settings(BaseSettings):
-    service_name: str = "opportunities"
-    port: int = 8003
-    environment: str = "development"
-    database_url: str = ""
-    redis_url: str = ""
-    firebase_project_id: str = ""
+    APP_ENV: str = "development"
+    DATABASE_URL: str = ""
+    UPSTASH_REDIS_REST_URL: str = ""
+    UPSTASH_REDIS_REST_TOKEN: str = ""
+    CORS_ORIGINS: str = "http://localhost:3000"
+
+    # Opportunities specific settings
+    OPENAI_API_KEY: str = ""
+    PINECONE_API_KEY: str = ""
 
     class Config:
         env_file = ".env"
-        extra = "ignore"
+        case_sensitive = True
 
 
-@lru_cache()
-def get_settings() -> Settings:
-    return Settings()
+settings = Settings()
