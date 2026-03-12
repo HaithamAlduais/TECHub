@@ -2,7 +2,18 @@ from pydantic_settings import BaseSettings
 from pathlib import Path
 from dotenv import load_dotenv
 
-ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
+
+def _find_project_root() -> Path:
+    """Walk up to find project root (folder containing pnpm-workspace.yaml)."""
+    p = Path(__file__).resolve().parent
+    for _ in range(10):
+        if (p / "pnpm-workspace.yaml").exists():
+            return p
+        p = p.parent
+    return Path(__file__).resolve().parents[3]  # fallback
+
+
+ROOT_ENV = _find_project_root() / ".env"
 if ROOT_ENV.exists():
     load_dotenv(ROOT_ENV)
 

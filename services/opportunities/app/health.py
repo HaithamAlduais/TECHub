@@ -40,7 +40,12 @@ async def health_check():
     Returns status of the service, database, and Redis.
     This is the Sprint 0 definition of done.
     """
-    load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
+    root = Path(__file__).resolve().parent
+    for _ in range(10):
+        if (root / "pnpm-workspace.yaml").exists():
+            load_dotenv(root / ".env", override=True)
+            break
+        root = root.parent
     database_url = os.getenv("DATABASE_URL", "")
     redis_url = os.getenv("REDIS_URL", "")
 
