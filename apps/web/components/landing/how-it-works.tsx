@@ -1,3 +1,5 @@
+import { DottedGlowBackground } from "@/components/ui/dotted-glow-background";
+
 const steps = [
   {
     step: "01",
@@ -21,7 +23,14 @@ const steps = [
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" className="border-t border-border bg-secondary/30 py-20 sm:py-32">
+    <section id="how-it-works" className="relative overflow-hidden border-t border-border bg-secondary/30 py-20 sm:py-32">
+      <DottedGlowBackground
+        className="pointer-events-none absolute inset-0 -z-10"
+        gap={20}
+        radius={1.5}
+        opacity={0.4}
+        speedScale={0.5}
+      />
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-sm font-medium text-accent">How It Works</p>

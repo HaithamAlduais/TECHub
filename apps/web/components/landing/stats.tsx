@@ -1,3 +1,5 @@
+import { DottedGlowBackground } from "@/components/ui/dotted-glow-background";
+
 const stats = [
   { value: "50K+", label: "Developers" },
   { value: "2M+", label: "Skills Verified" },
@@ -7,7 +9,15 @@ const stats = [
 
 export function Stats() {
   return (
-    <section className="border-y border-border bg-secondary/30 py-16">
+    <section className="relative border-y border-border bg-secondary/30 py-16 overflow-hidden">
+      {/* Dotted background scoped only to this section — tiny canvas, no lag */}
+      <DottedGlowBackground
+        className="pointer-events-none absolute inset-0 -z-10"
+        gap={18}
+        radius={1.5}
+        opacity={0.5}
+        speedScale={0.6}
+      />
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
           {stats.map((stat) => (

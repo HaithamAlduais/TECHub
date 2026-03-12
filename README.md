@@ -55,7 +55,7 @@ Connect GitHub, HackerRank, Kaggle → AI extracts and scores your skills → li
 
 **Build:**
 - Auth: register, login, Google OAuth, forgot/reset password
-- 6-step onboarding wizard (Step 4+ locked until one proof is connected)
+- onboarding wizard (Step 4+ locked until one proof is connected)
 - 7 proof connections: GitHub (OAuth), HackerRank, Kaggle, Behance/portfolio URL, LinkedIn PDF upload, Certificate upload, CV upload
 - All connections → GPT-4o extraction → developer confirms each item → skill scoring
 - Living CV (in-app, interactive, never exported) with trust tiers: AI-Verified · Platform-Connected · Self-Reported
