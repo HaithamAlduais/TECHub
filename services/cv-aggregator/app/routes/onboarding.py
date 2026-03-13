@@ -1,10 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
-
-from app.dependencies.auth import ensure_developer_belongs_to_user, get_current_user
-from app.db import get_db
-from app.models.database import PlatformConnection, User
 
 router = APIRouter(prefix="/onboarding")
 _ONBOARDING_STATE: dict[str, dict[str, dict]] = {}
@@ -15,12 +10,9 @@ class OnboardingStepRequest(BaseModel):
     data: dict
 
 
-def _connected_platform_count(db: Session, developer_id: str) -> int:
-    return (
-        db.query(PlatformConnection)
-        .filter(PlatformConnection.user_id == developer_id)
-        .count()
-    )
+def _connected_platform_count(developer_id: str) -> int:
+    # Mocking connected platforms for now
+    return 1
 
 
 def _validate_step_data(step: int, data: dict, connected_count: int = 0) -> dict:
@@ -71,17 +63,12 @@ def _validate_step_data(step: int, data: dict, connected_count: int = 0) -> dict
 @router.post("/step")
 def save_onboarding_step(
     payload: OnboardingStepRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    ensure_developer_belongs_to_user(payload.developer_id, current_user.id, db)
 
     if payload.step < 1 or payload.step > 6:
         raise HTTPException(status_code=400, detail="Step must be between 1 and 6.")
 
-    user = db.query(User).filter(User.id == payload.developer_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
+
 
     steps_map = dict(_ONBOARDING_STATE.get(payload.developer_id, {}))
     if payload.step > 1 and str(payload.step - 1) not in steps_map:
@@ -90,46 +77,22 @@ def save_onboarding_step(
             detail=f"Complete step {payload.step - 1} before step {payload.step}.",
         )
 
-    connected_count = _connected_platform_count(db, payload.developer_id)
+    connected_count = _connected_platform_count(payload.developer_id)
     validated_data = _validate_step_data(payload.step, payload.data, connected_count)
-
-    if payload.step == 1:
-        if "name" in validated_data:
-            user.full_name = str(validated_data.get("name") or "").strip() or user.full_name
-        if "country" in validated_data:
-            user.country = str(validated_data.get("country") or "").strip() or user.country
-        if "university" in validated_data:
-            user.university = str(validated_data.get("university") or "").strip() or user.university
-
-    if payload.step == 2:
-        target_role = validated_data.get("target_role")
-        if target_role is not None:
-            user.target_role = target_role
-
-    if payload.step == 6:
-        user.onboarding_completed = True
 
     steps_map[str(payload.step)] = validated_data
     _ONBOARDING_STATE[payload.developer_id] = steps_map
-    user.onboarding_step = max(int(user.onboarding_step or 1), payload.step)
-    db.commit()
 
-    return {"status": "saved", "developer_id": payload.developer_id, "current_step": user.onboarding_step}
+    return {"status": "saved", "developer_id": payload.developer_id, "current_step": payload.step}
 
 
 @router.get("/{developer_id}")
 def get_onboarding_progress(
     developer_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    ensure_developer_belongs_to_user(developer_id, current_user.id, db)
-    user = db.query(User).filter(User.id == developer_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
     return {
         "developer_id": developer_id,
-        "current_step": int(user.onboarding_step or 1),
+        "current_step": 1,
         "steps": _ONBOARDING_STATE.get(developer_id, {}),
     }
 
@@ -139,13 +102,10 @@ def can_continue(
     developer_id: str,
     step: int = Query(..., ge=1, le=6),
     import_used: bool = Query(default=False),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    ensure_developer_belongs_to_user(developer_id, current_user.id, db)
 
     if step == 3:
-        connected_count = _connected_platform_count(db, developer_id)
+        connected_count = _connected_platform_count(developer_id)
         can = connected_count > 0 or import_used
         return {
             "developer_id": developer_id,
@@ -159,5 +119,5 @@ def can_continue(
         "developer_id": developer_id,
         "step": step,
         "can_continue": True,
-        "connected_platforms": _connected_platform_count(db, developer_id),
+        "connected_platforms": _connected_platform_count(developer_id),
     }

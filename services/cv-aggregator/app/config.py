@@ -20,7 +20,6 @@ if ROOT_ENV.exists():
 
 class Settings(BaseSettings):
     APP_ENV: str = "development"
-    DATABASE_URL: str = ""
     UPSTASH_REDIS_REST_URL: str = ""
     UPSTASH_REDIS_REST_TOKEN: str = ""
     CORS_ORIGINS: str = "http://localhost:3000"
@@ -30,10 +29,6 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""
     GITHUB_REDIRECT_URI: str = ""
-    SUPABASE_URL: str = ""
-    SUPABASE_ANON_KEY: str = ""
-    SUPABASE_SERVICE_ROLE_KEY: str = ""
-    SUPABASE_JWT_SECRET: str = ""
     OPENAI_API_KEY: str = ""
     PINECONE_API_KEY: str = ""
     R2_ENDPOINT_URL: str = ""

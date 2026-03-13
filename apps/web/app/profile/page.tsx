@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { authHeaders, getUserId } from "@/lib/session";
 
 const API_BASE = process.env.NEXT_PUBLIC_CV_API_URL ?? "http://localhost:8013";
 
@@ -20,7 +19,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!userId) setUserId(getUserId());
+    // getUserId from session removed
   }, [userId]);
 
   async function loadProfile() {
@@ -29,7 +28,7 @@ export default function ProfilePage() {
     setMessage("");
     setData(null);
     try {
-      const response = await fetch(`${API_BASE}/cv/${userId}`, { headers: authHeaders() });
+      const response = await fetch(`${API_BASE}/cv/${userId}`, { headers: { "Content-Type": "application/json" } });
       const body = await response.json();
       if (!response.ok) {
         setMessage(body?.detail ?? "Failed to load profile.");
@@ -46,7 +45,7 @@ export default function ProfilePage() {
   return (
     <main className="mx-auto max-w-5xl px-4 py-24">
       <h1 className="text-3xl font-bold">Living CV / Character Profile</h1>
-      <p className="mt-3 text-sm text-muted-foreground">Session user: {getUserId() || "not set"}</p>
+      <p className="mt-3 text-sm text-muted-foreground">Session user: {userId || "not set"}</p>
       <div className="mt-6 flex max-w-xl gap-2">
         <Input placeholder="Paste user_id from register response" value={userId} onChange={(e) => setUserId(e.target.value)} />
         <Button onClick={loadProfile} disabled={loading || !userId}>
