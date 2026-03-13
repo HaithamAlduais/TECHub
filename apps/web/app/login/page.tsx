@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
 import { setSession } from "@/lib/session";
+import { supabase } from "@/lib/supabase";
 
 const API_BASE = process.env.NEXT_PUBLIC_CV_API_URL ?? "http://localhost:8013";
 
@@ -20,18 +21,43 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setResult("");
+    
     try {
-      const response = await fetch(`${API_BASE}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+      // 1. Authenticate with Supabase
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
+
+      if (authError) {
+        setResult(authError.message);
+        setLoading(false);
+        return;
+      }
+
+      const token = authData.session?.access_token;
+      if (!token) {
+        setResult("Login successful, but no session token received.");
+        setLoading(false);
+        return;
+      }
+
+      // 2. Sync session with our backend
+      const response = await fetch(`${API_BASE}/auth/sync`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+      });
+
       const data = await response.json();
+      
       if (!response.ok) {
-        setResult(data?.detail ?? "Login failed.");
+        setResult(data?.detail ?? "Failed to sync session with backend.");
       } else {
         setSession(data.user_id, data.developer_id);
-        setResult(`Signed in. Session: ${data.session}`);
+        setResult(`Signed in as ${data.username}.`);
       }
     } catch {
       setResult("Request failed. Ensure cv-aggregator is running.");

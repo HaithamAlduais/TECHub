@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.database import User
-from app.services.firebase_auth import get_firebase_auth
+from app.services.supabase_auth import verify_supabase_jwt
 
 
 def get_current_user(
@@ -22,20 +22,17 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Missing bearer token.")
 
     token = authorization.split(" ", 1)[1].strip()
-    firebase_auth = get_firebase_auth()
-    if firebase_auth is None:
-        raise HTTPException(status_code=503, detail="Firebase auth is not configured.")
 
     try:
-        decoded = firebase_auth.verify_id_token(token)
+        decoded = verify_supabase_jwt(token)
     except Exception as exc:
-        raise HTTPException(status_code=401, detail=f"Invalid Firebase token: {exc}") from exc
+        raise HTTPException(status_code=401, detail=f"Invalid Supabase token: {exc}") from exc
 
-    uid = decoded.get("uid")
+    uid = decoded.get("sub")
     if not uid:
-        raise HTTPException(status_code=401, detail="Token payload missing uid.")
+        raise HTTPException(status_code=401, detail="Token payload missing sub.")
 
-    user = db.query(User).filter(User.firebase_uid == uid).first()
+    user = db.query(User).filter(User.supabase_uid == uid).first()
     if not user:
         raise HTTPException(status_code=401, detail="User does not exist.")
     return user

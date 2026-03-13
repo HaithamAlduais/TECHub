@@ -21,7 +21,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String, primary_key=True, default=gen_uuid)
-    firebase_uid = Column(String(128), unique=True, nullable=False, index=True)
+    supabase_uid = Column(String(128), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=True)  # Added by migration 007 for local auth.
