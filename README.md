@@ -36,15 +36,15 @@ Connect GitHub, HackerRank, Kaggle → AI extracts and scores your skills → li
 | `scripts/` | Dev startup helpers |
 | `.env` | Your secrets — copy from `.env.example`, fill in, never commit |
 
-### Database
+### Database & Authentication (Transitioning to Supabase)
 
-**PostgreSQL on Neon (cloud).** Same DB, different tables per service.
+**We are currently migrating to Supabase for all Database and Authentication needs.** 
+Local SQLAlchemy models and Alembic migrations have been removed from the repository.
 
-| Table | Owned by |
-|-------|---------|
-| `users`, `platform_connections`, `projects`, `skills`, `skill_evidence`, `experiences`, `certificates`, `competitions`, `skill_tags_catalog`, `user_skill_tags` | Dev 1 & Dev 2 |
-| `opportunities`, `applications` | Dev 3 & Dev 4 |
-| `tokens` | Haitham (post-MVP) |
+*   **Database:** Supabase PostgreSQL (Cloud)
+*   **Authentication:** Supabase Auth (Email/Password, OAuth, etc.)
+
+> ⚠️ **Developers:** You will be building the new database schemas and authentication flows directly against the Supabase instance. Do not create local SQLAlchemy models or Alembic migrations.
 
 ---
 
@@ -54,7 +54,7 @@ Connect GitHub, HackerRank, Kaggle → AI extracts and scores your skills → li
 **Files:** `services/cv-aggregator/app/routes/` → auth, onboarding, integrations, import_center, cv
 
 **Build:**
-- Auth: register, login, Google OAuth, forgot/reset password
+- Auth: Supabase Auth integration (register, login, Google OAuth, forgot/reset password).
 - onboarding wizard (Step 4+ locked until one proof is connected)
 - 7 proof connections: GitHub (OAuth), HackerRank, Kaggle, Behance/portfolio URL, LinkedIn PDF upload, Certificate upload, CV upload
 - All connections → GPT-4o extraction → developer confirms each item → skill scoring
@@ -97,7 +97,7 @@ Connect GitHub, HackerRank, Kaggle → AI extracts and scores your skills → li
 ## Running Locally
 
 ```bash
-# 1. Copy env file and fill in values (ask Haitham)
+# 1. Copy env file and fill in values (ask Haitham for Supabase keys)
 cp .env.example .env
 
 # 2. Install frontend deps
@@ -107,11 +107,7 @@ pnpm install
 pip install -r services/cv-aggregator/requirements.txt
 pip install -r services/opportunities/requirements.txt
 
-# 4. Run DB migrations
-cd services/cv-aggregator && alembic upgrade head && cd ../..
-cd services/opportunities && alembic upgrade head && cd ../..
-
-# 5. Start everything
+# 4. Start everything (No DB migrations needed for now)
 pnpm dev
 ```
 

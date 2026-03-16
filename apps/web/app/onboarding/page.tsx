@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { authHeaders, getDeveloperId, getUserId } from "@/lib/session";
 
 const API_BASE = process.env.NEXT_PUBLIC_CV_API_URL ?? "http://localhost:8013";
 
@@ -31,8 +30,7 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!userId) setUserId(getUserId());
-    if (!developerId) setDeveloperId(getDeveloperId());
+    // Session state removed. Use local user IDs directly.
   }, [userId, developerId]);
 
   useEffect(() => {
@@ -46,7 +44,7 @@ export default function OnboardingPage() {
     setResult("");
     try {
       const response = await fetch(`${API_BASE}/onboarding/${developerId}`, {
-        headers: authHeaders(),
+        headers: { "Content-Type": "application/json" },
       });
       const data = await response.json();
       if (!response.ok) {
@@ -90,7 +88,7 @@ export default function OnboardingPage() {
     try {
       const guardResp = await fetch(
         `${API_BASE}/onboarding/${developerId}/can-continue?step=3&import_used=${importUsed}`,
-        { headers: authHeaders() },
+        { headers: { "Content-Type": "application/json" } },
       );
       const guardData = await guardResp.json();
       setConnectedPlatforms(guardData.connected_platforms ?? 0);
@@ -111,13 +109,13 @@ export default function OnboardingPage() {
     try {
       if (platform === "github") {
         await fetch(`${API_BASE}/integrations/github/callback?developer_id=${developerId}&code=demo-code`, {
-          headers: authHeaders(),
+          headers: { "Content-Type": "application/json" },
         });
         setGithubConnected(true);
       } else {
         await fetch(`${API_BASE}/integrations/${platform}/connect`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders() },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ developer_id: developerId, username: `${platform}_user` }),
         });
         if (platform === "hackerrank") setHackerrankConnected(true);
@@ -156,7 +154,7 @@ export default function OnboardingPage() {
       if (step === 3) {
         const guardResp = await fetch(
           `${API_BASE}/onboarding/${developerId}/can-continue?step=3&import_used=${importUsed}`,
-          { headers: authHeaders() },
+          { headers: { "Content-Type": "application/json" } },
         );
         const guardData = await guardResp.json();
         if (!guardData.can_continue) {
@@ -168,7 +166,7 @@ export default function OnboardingPage() {
 
       const response = await fetch(`${API_BASE}/onboarding/step`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           developer_id: developerId,
           step,
@@ -195,7 +193,7 @@ export default function OnboardingPage() {
       <h1 className="text-3xl font-bold">Onboarding Wizard</h1>
       <p className="mt-3 text-muted-foreground">Step {step} of {TOTAL_STEPS}</p>
       <div className="mt-6 grid max-w-lg gap-4">
-        <p className="text-xs text-muted-foreground">Session user: {userId || "not set (register/login first)"}</p>
+        <p className="text-xs text-muted-foreground">Session user: {userId || "not set"}</p>
         <div className="space-y-2">
           <Label htmlFor="developer-id">Developer ID</Label>
           <Input id="developer-id" value={developerId} onChange={(e) => setDeveloperId(e.target.value)} />
