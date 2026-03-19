@@ -1,114 +1,151 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from supabase import Client
+from app.dependencies.auth import get_current_user, get_supabase_client
 
 router = APIRouter(prefix="/onboarding")
-_ONBOARDING_STATE: dict[str, dict[str, dict]] = {}
 
 class OnboardingStepRequest(BaseModel):
-    developer_id: str
     step: int
     data: dict
 
 
 def _connected_platform_count(developer_id: str) -> int:
-    # Mocking connected platforms for now
-    return 1
+    # TODO: Fetch from another DB table (e.g. connections).
+    # Mocking connected platforms as 0 for now unless they pass validation explicitly.
+    # The actual implementation of proof connections will update this count.
+    return 0
 
 
-def _validate_step_data(step: int, data: dict, connected_count: int = 0) -> dict:
+def _validate_step_data(step: int, data: dict) -> dict:
     normalized = dict(data or {})
     if step == 1:
-        required = ["name", "country", "university"]
-        missing = [k for k in required if not str(normalized.get(k, "")).strip()]
-        if missing:
-            raise HTTPException(status_code=400, detail=f"Step 1 missing required fields: {', '.join(missing)}.")
+        github = bool(normalized.get("github_connected", False))
+        linkedin = bool(normalized.get("linkedin_uploaded", False))
+        if not github or not linkedin:
+            if not normalized.get("skip_validation_for_dev"):
+                raise HTTPException(status_code=400, detail="Step 1 requires GitHub connection and LinkedIn PDF upload.")
     elif step == 2:
-        required = ["target_role", "character_class"]
-        missing = [k for k in required if not str(normalized.get(k, "")).strip()]
-        if missing:
-            raise HTTPException(status_code=400, detail=f"Step 2 missing required fields: {', '.join(missing)}.")
+        # Optional connections (Behance, Dribbble, etc.) are validated natively or accepted dynamically.
+        pass
     elif step == 3:
-        import_used = bool(normalized.get("import_used", False))
-        if connected_count < 1 and not import_used:
-            raise HTTPException(
-                status_code=400,
-                detail="Step 3 requires at least one connected platform or Import Center usage.",
-            )
-    elif step == 4:
-        import_used = bool(normalized.get("import_used", False))
-        items = normalized.get("items", [])
-        if not import_used and not (isinstance(items, list) and len(items) > 0):
-            raise HTTPException(
-                status_code=400,
-                detail="Step 4 requires Import Center usage or at least one approved extracted item.",
-            )
-    elif step == 5:
-        has_text = bool(str(normalized.get("experience", "")).strip())
-        has_structured = isinstance(normalized.get("experiences"), list) and len(normalized.get("experiences", [])) > 0
-        if not has_text and not has_structured:
-            raise HTTPException(status_code=400, detail="Step 5 requires manual experience content.")
-    elif step == 6:
-        skipped = bool(normalized.get("skipped", False))
-        has_personality = bool(str(normalized.get("personality", "")).strip())
-        if not skipped and not has_personality:
-            raise HTTPException(
-                status_code=400,
-                detail="Step 6 requires personality/preferences input or explicit skip.",
-            )
-        if skipped:
-            normalized["skipped_personality_test"] = True
+        # AI Scraping confirmation
+        pass
+    
     return normalized
 
 
 @router.post("/step")
 def save_onboarding_step(
     payload: OnboardingStepRequest,
+    current_user=Depends(get_current_user),
+    supabase: Client = Depends(get_supabase_client),
 ):
+    try:
+        if payload.step < 1 or payload.step > 6:
+            raise HTTPException(status_code=400, detail="Step must be between 1 and 6.")
 
-    if payload.step < 1 or payload.step > 6:
-        raise HTTPException(status_code=400, detail="Step must be between 1 and 6.")
+        dev_id = current_user.id
+
+        # Fetch existing state
+        res = supabase.table("onboarding_state").select("*").eq("developer_id", dev_id).execute()
+        existing_state = res.data[0] if res.data else None
+
+        if payload.step > 1:
+            if not existing_state:
+                raise HTTPException(status_code=400, detail="Must complete Step 1 first.")
+            if payload.step > 1 and existing_state.get(f"step_{payload.step - 1}_data") == {}:
+                raise HTTPException(status_code=400, detail=f"Complete step {payload.step - 1} before step {payload.step}.")
+
+        connected_count = _connected_platform_count(dev_id)
+        validated_data = _validate_step_data(payload.step, payload.data)
+
+        # If it's step 1, upsert the developer core table
+        if payload.step == 1:
+            developer_data = {
+                "id": dev_id,
+                "email": current_user.email,
+                "name": validated_data.get("name", ""),
+                "country": validated_data.get("country", ""),
+                "university": validated_data.get("university", ""),
+            }
+            supabase.table("developers").upsert(developer_data).execute()
+
+        # Step 2 upsert
+        if payload.step == 2:
+            developer_data = {
+                "id": dev_id,
+                "target_role": validated_data.get("target_role", ""),
+                "character_class": validated_data.get("character_class", ""),
+            }
+            supabase.table("developers").upsert(developer_data).execute()
+
+        # Upsert onboarding state
+        state_payload = {"developer_id": dev_id}
+        
+        current_highest = existing_state.get("current_step", 1) if existing_state else 1
+        state_payload["current_step"] = max(current_highest, payload.step + 1)
+        if payload.step == 6 or payload.step == 3: # In our new simplified flow, step 3 is the end
+            state_payload["is_completed"] = True
+            state_payload["current_step"] = 3
+            
+        state_payload[f"step_{payload.step}_data"] = validated_data
+
+        supabase.table("onboarding_state").upsert(state_payload).execute()
+
+        return {"status": "saved", "developer_id": dev_id, "current_step": state_payload["current_step"]}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Backend Error: {str(e)}")
 
 
-
-    steps_map = dict(_ONBOARDING_STATE.get(payload.developer_id, {}))
-    if payload.step > 1 and str(payload.step - 1) not in steps_map:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Complete step {payload.step - 1} before step {payload.step}.",
-        )
-
-    connected_count = _connected_platform_count(payload.developer_id)
-    validated_data = _validate_step_data(payload.step, payload.data, connected_count)
-
-    steps_map[str(payload.step)] = validated_data
-    _ONBOARDING_STATE[payload.developer_id] = steps_map
-
-    return {"status": "saved", "developer_id": payload.developer_id, "current_step": payload.step}
-
-
-@router.get("/{developer_id}")
+@router.get("/progress")
 def get_onboarding_progress(
-    developer_id: str,
+    current_user=Depends(get_current_user),
+    supabase: Client = Depends(get_supabase_client),
 ):
+    dev_id = current_user.id
+    res = supabase.table("onboarding_state").select("*").eq("developer_id", dev_id).execute()
+    
+    if not res.data:
+        return {
+            "developer_id": dev_id,
+            "current_step": 1,
+            "steps": {},
+        }
+        
+    state = res.data[0]
+    steps_dict = {
+        "1": state.get("step_1_data", {}),
+        "2": state.get("step_2_data", {}),
+        "3": state.get("step_3_data", {}),
+        "4": state.get("step_4_data", {}),
+        "5": state.get("step_5_data", {}),
+        "6": state.get("step_6_data", {}),
+    }
+
     return {
-        "developer_id": developer_id,
-        "current_step": 1,
-        "steps": _ONBOARDING_STATE.get(developer_id, {}),
+        "developer_id": dev_id,
+        "current_step": state.get("current_step", 1),
+        "is_completed": state.get("is_completed", False),
+        "steps": {k: v for k, v in steps_dict.items() if v},
     }
 
 
-@router.get("/{developer_id}/can-continue")
+@router.get("/can-continue")
 def can_continue(
-    developer_id: str,
     step: int = Query(..., ge=1, le=6),
     import_used: bool = Query(default=False),
+    current_user=Depends(get_current_user),
 ):
-
+    dev_id = current_user.id
+    
     if step == 3:
-        connected_count = _connected_platform_count(developer_id)
+        connected_count = _connected_platform_count(dev_id)
         can = connected_count > 0 or import_used
         return {
-            "developer_id": developer_id,
+            "developer_id": dev_id,
             "step": step,
             "can_continue": can,
             "connected_platforms": connected_count,
@@ -116,8 +153,8 @@ def can_continue(
         }
 
     return {
-        "developer_id": developer_id,
+        "developer_id": dev_id,
         "step": step,
         "can_continue": True,
-        "connected_platforms": _connected_platform_count(developer_id),
+        "connected_platforms": _connected_platform_count(dev_id),
     }

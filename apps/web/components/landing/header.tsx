@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Menu, X } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
 
 const navItems = [
   { label: "Features", href: "#features" },
@@ -14,6 +15,20 @@ const navItems = [
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const supabase = createClient();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [supabase]);
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
@@ -38,10 +53,20 @@ export function Header() {
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/login">Sign In</Link>
-          </Button>
-          <Button size="sm">Get Started</Button>
+          {user ? (
+            <Button asChild size="sm">
+              <Link href="/opportunities">Go to Dashboard</Link>
+            </Button>
+          ) : (
+            <>
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/login">Sign In</Link>
+              </Button>
+              <Button asChild size="sm">
+                <Link href="/register">Get Started</Link>
+              </Button>
+            </>
+          )}
         </div>
 
         <button
@@ -66,12 +91,20 @@ export function Header() {
                 {item.label}
               </Link>
             ))}
-            <div className="flex flex-col gap-2 pt-4">
-              <Button asChild variant="ghost" size="sm" className="justify-start">
-                <Link href="/login">Sign In</Link>
-              </Button>
-              <Button size="sm">Get Started</Button>
-            </div>
+              {user ? (
+                <Button asChild size="sm" className="justify-start">
+                  <Link href="/opportunities">Go to Dashboard</Link>
+                </Button>
+              ) : (
+                <>
+                  <Button asChild variant="ghost" size="sm" className="justify-start">
+                    <Link href="/login">Sign In</Link>
+                  </Button>
+                  <Button asChild size="sm" className="justify-start">
+                    <Link href="/register">Get Started</Link>
+                  </Button>
+                </>
+              )}
           </nav>
         </div>
       )}

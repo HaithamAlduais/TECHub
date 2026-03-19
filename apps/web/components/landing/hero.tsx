@@ -1,5 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Github, Sparkles } from "lucide-react";
+import TypingText from "@/components/animata/text/typing-text";
+import Link from "next/link";
 
 export function Hero() {
   return (
@@ -16,9 +18,15 @@ export function Hero() {
             <span className="text-muted-foreground">Now with AI-powered skill matching</span>
           </div>
 
-          <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-            Your developer skills,{" "}
-            <span className="text-accent">verified and gamified</span>
+          <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl min-h-[140px] flex items-center justify-center">
+            <TypingText
+              text="Your developer skills verified and gamified."
+              delay={50}
+              className="text-accent"
+              alwaysVisibleCount={0}
+              repeat={false}
+              hideCursorOnComplete={true}
+            />
           </h1>
 
           <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-muted-foreground">
@@ -28,14 +36,18 @@ export function Hero() {
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Button size="lg" className="gap-2">
-              Start Building Your Profile
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="lg" className="gap-2">
-              <Github className="h-4 w-4" />
-              Connect GitHub
-            </Button>
+            <Link
+              href="/register"
+              className="px-8 py-4 bg-transparent border-3 border-accent text-white uppercase tracking-widest font-bold"
+            >
+              I am a Developer
+            </Link>
+            <Link
+              href="/employers"
+              className="px-8 py-4 bg-transparent border-2 border-accent text-accent uppercase tracking-widest font-bold hover:bg-accent/10 transition-colors"
+            >
+              We are Hiring
+            </Link>
           </div>
 
           <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-muted-foreground">

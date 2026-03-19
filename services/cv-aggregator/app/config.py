@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     APP_URL: str = "http://localhost:3000"
 
     # CV Aggregator specific settings
+    SUPABASE_URL: str = ""
+    SUPABASE_ANON_KEY: str = ""
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""
     GITHUB_REDIRECT_URI: str = ""
