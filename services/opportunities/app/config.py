@@ -27,6 +27,12 @@ class Settings(BaseSettings):
 
     # Opportunities specific settings
     OPENAI_API_KEY: str = ""
+    AI_ENRICHMENT_ENABLED: bool = True
+    AI_ENRICHMENT_MODEL: str = "gpt-4o-mini"
+    AI_ENRICHMENT_TIMEOUT_SECONDS: float = 8.0
+    AI_ENRICHMENT_CACHE_ENABLED: bool = True
+    AI_ENRICHMENT_CACHE_TTL_SECONDS: int = 3600
+    AI_ENRICHMENT_CACHE_PREFIX: str = "opportunity_detail_enrichment"
     PINECONE_API_KEY: str = ""
 
     class Config:
