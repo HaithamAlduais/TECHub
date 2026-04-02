@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Github, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import TypingText from "@/components/animata/text/typing-text";
 import Link from "next/link";
 

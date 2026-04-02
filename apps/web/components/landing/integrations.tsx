@@ -1,10 +1,10 @@
-import { Github, Code2, Award, Briefcase, Globe, BookOpen } from "lucide-react";
+import { GitBranch, Code2, Award, Briefcase, Globe, BookOpen } from "lucide-react";
 
 const integrations = [
   {
     name: "GitHub",
     description: "Commits, repos, contributions",
-    icon: Github,
+    icon: GitBranch,
   },
   {
     name: "HackerRank",

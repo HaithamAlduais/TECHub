@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { Github, UploadCloud, CheckCircle, Briefcase, Code, PenTool, LayoutDashboard, ArrowRight, X } from 'lucide-react'
+import { GitBranch, UploadCloud, CheckCircle, Briefcase, Code, PenTool, LayoutDashboard, ArrowRight, X } from 'lucide-react'
 
 export default function OnboardingPage() {
   const [currentStep, setCurrentStep] = useState(1)
@@ -245,7 +245,7 @@ export default function OnboardingPage() {
                   : 'border-white/20 bg-white/5 hover:border-white hover:bg-white/10 text-white'
                 }`}
               >
-                {githubConnected ? <CheckCircle className="w-16 h-16 md:w-20 md:h-20 mb-6" /> : <Github className="w-16 h-16 md:w-20 md:h-20 mb-6" />}
+                {githubConnected ? <CheckCircle className="w-16 h-16 md:w-20 md:h-20 mb-6" /> : <GitBranch className="w-16 h-16 md:w-20 md:h-20 mb-6" />}
                 <span className="text-xl md:text-2xl font-bold uppercase tracking-wider text-center">
                   {githubConnected ? 'GitHub Connected' : 'Connect GitHub'}
                 </span>

@@ -1,51 +1,259 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { CheckCircle, ExternalLink, Pen, Download, RotateCcw, X, Image as ImageIcon, Github } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import {
+  CheckCircle,
+  ExternalLink,
+  Pen,
+  Download,
+  RotateCcw,
+  Image as ImageIcon,
+  GitBranch,
+  Plus,
+  Trash2,
+} from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
 
-const INITIAL_PROFILE = {
-  name: "Alex Developer",
-  email: "alex@techub.dev",
-  title: "Senior Full Stack Engineer",
-  socials: ["github.com/alexdev", "linkedin.com/in/alexdev"],
-  profileImage: "",
-  skills: {
-    verified: ["React", "TypeScript", "Node.js", "PostgreSQL", "Python"],
-    unverified: ["Docker", "AWS", "Figma", "Agile", "C++"]
-  },
-  metrics: {
-    hackerrank: "Top 5% Algorithms",
-    kaggle: "Notebooks Expert",
-    github_commits: "1,204 (Last yr)"
-  },
-  experience: [
-    { role: "Frontend Lead", company: "TechCorp", years: "2021 - Present", desc: "Led migration to Next.js." },
-    { role: "Software Engineer", company: "StartupX", years: "2018 - 2021", desc: "Built RESTful integrations." }
-  ],
-  education: [
-    { degree: "BSc Computer Science", school: "State University", years: "2014 - 2018", image: "" },
-    { degree: "AWS Certified Developer", school: "Amazon", years: "2022", desc: "Associate Level Certification", image: "" }
-  ],
-  projects: [
-    { title: "E-Commerce Microservices", summary: "A scalable backend architecture using Docker and Node.", stack: ["Node.js", "Docker", "Redis"], link: "#" },
-    { title: "Portfolio Generator", summary: "CLI tool to build static sites from markdown.", stack: ["TypeScript", "React"], link: "#" },
-    { title: "Kaggle Dataset Analyzer", summary: "Jupyter notebooks for extracting trends in NLP.", stack: ["Python", "Pandas"], link: "#" }
-  ]
+type ExperienceItem = {
+  role: string
+  company: string
+  period: string
+  desc: string
+  location?: string
 }
 
+type EducationItem = {
+  degree: string
+  school: string
+  years: string
+  desc?: string
+  image?: string
+}
+
+type ProjectItem = {
+  title: string
+  summary: string
+  stack: string[]
+  link: string
+}
+
+type ProfileState = {
+  name: string
+  email: string
+  title: string
+  summary: string
+  location: string
+  phone: string
+  linkedin: string
+  github: string
+  profileImage: string
+  skills: string[]
+  metrics: { hackerrank: string; kaggle: string; github_commits: string }
+  experience: ExperienceItem[]
+  education: EducationItem[]
+  projects: ProjectItem[]
+}
+
+/** No placeholder CV — merged with server `cv_data` when present */
+const EMPTY_PROFILE: ProfileState = {
+  name: '',
+  email: '',
+  title: '',
+  summary: '',
+  location: '',
+  phone: '',
+  linkedin: '',
+  github: '',
+  profileImage: '',
+  skills: [],
+  metrics: { hackerrank: '', kaggle: '', github_commits: '' },
+  experience: [],
+  education: [],
+  projects: [],
+}
+
+function normalizeSkillsField(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return [...new Set(raw.map(String).map((s) => s.trim()).filter(Boolean))]
+  }
+  if (raw && typeof raw === 'object') {
+    const o = raw as { verified?: unknown[]; unverified?: unknown[] }
+    const a = [
+      ...(Array.isArray(o.verified) ? o.verified : []),
+      ...(Array.isArray(o.unverified) ? o.unverified : []),
+    ]
+    return [...new Set(a.map(String).map((s) => s.trim()).filter(Boolean))]
+  }
+  return []
+}
+
+function normalizeExperience(raw: unknown): ExperienceItem[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((e: any) => ({
+    role: String(e.role ?? ''),
+    company: String(e.company ?? ''),
+    period: String(e.period ?? e.years ?? ''),
+    desc: String(e.desc ?? ''),
+    location: e.location ? String(e.location) : '',
+  }))
+}
+
+function normalizeEducation(raw: unknown): EducationItem[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((e: any) => ({
+    degree: String(e.degree ?? ''),
+    school: String(e.school ?? ''),
+    years: String(e.years ?? ''),
+    desc: e.desc ? String(e.desc) : undefined,
+    image: e.image ? String(e.image) : undefined,
+  }))
+}
+
+function normalizeProjects(raw: unknown): ProjectItem[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((p: any) => ({
+    title: String(p.title ?? ''),
+    summary: String(p.summary ?? ''),
+    stack: Array.isArray(p.stack) ? p.stack.map(String) : [],
+    link: String(p.link ?? '#'),
+  }))
+}
+
+function mergeCvIntoProfile(cv: Record<string, any>, base: ProfileState): ProfileState {
+  let linkedin = base.linkedin
+  let github = base.github
+  if (typeof cv.linkedin === 'string') {
+    linkedin = cv.linkedin.replace(/^https?:\/\//, '')
+  }
+  if (typeof cv.github === 'string') {
+    github = cv.github.replace(/^https?:\/\//, '')
+  }
+  if (Array.isArray(cv.socials)) {
+    for (const s of cv.socials as string[]) {
+      const u = String(s).replace(/^https?:\/\//, '')
+      if (u.toLowerCase().includes('linkedin')) linkedin = u
+      if (u.toLowerCase().includes('github')) github = u
+    }
+  }
+
+  return {
+    ...base,
+    name: cv.name ?? base.name,
+    email: cv.email ?? base.email,
+    title: cv.title ?? base.title,
+    summary: cv.summary ?? base.summary ?? '',
+    location: cv.location ?? base.location ?? '',
+    phone: cv.phone ?? base.phone ?? '',
+    linkedin,
+    github,
+    skills: cv.skills != null ? normalizeSkillsField(cv.skills) : base.skills,
+    experience:
+      Array.isArray(cv.experience) && cv.experience.length > 0
+        ? normalizeExperience(cv.experience)
+        : base.experience,
+    education:
+      Array.isArray(cv.education) && cv.education.length > 0
+        ? normalizeEducation(cv.education)
+        : base.education,
+    projects:
+      Array.isArray(cv.projects) && cv.projects.length > 0
+        ? normalizeProjects(cv.projects)
+        : base.projects,
+    metrics: cv.metrics
+      ? {
+          hackerrank: String((cv.metrics as any).hackerrank ?? ''),
+          kaggle: String((cv.metrics as any).kaggle ?? ''),
+          github_commits: String((cv.metrics as any).github_commits ?? ''),
+        }
+      : base.metrics,
+  }
+}
+
+function profileToCvData(p: ProfileState): Record<string, unknown> {
+  return {
+    name: p.name,
+    email: p.email,
+    title: p.title,
+    summary: p.summary,
+    location: p.location,
+    phone: p.phone,
+    linkedin: p.linkedin,
+    github: p.github,
+    skills: p.skills.filter(Boolean),
+    experience: p.experience.map((e) => ({
+      role: e.role,
+      company: e.company,
+      period: e.period,
+      desc: e.desc,
+      location: e.location ?? '',
+    })),
+    education: p.education.map((e) => ({
+      school: e.school,
+      degree: e.degree,
+      years: e.years,
+      desc: e.desc ?? '',
+    })),
+    projects: p.projects,
+    metrics: p.metrics,
+  }
+}
+
+type EditSection =
+  | null
+  | 'header'
+  | 'summary'
+  | 'skills'
+  | 'experience'
+  | 'education'
+  | 'projects'
+  | 'metrics'
+
 export default function ProfileDashboard() {
-  const [profile, setProfile] = useState(INITIAL_PROFILE)
+  const [profile, setProfile] = useState<ProfileState>(EMPTY_PROFILE)
+  const [editing, setEditing] = useState<EditSection>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [refreshCooldown, setRefreshCooldown] = useState(false)
   const [isConnectingGithub, setIsConnectingGithub] = useState(false)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  const persistProfile = useCallback(async (next: ProfileState) => {
+    try {
+      setSaveState('saving')
+      const supabase = createClient()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session) {
+        setSaveState('idle')
+        return
+      }
+      const { error } = await supabase
+        .from('developers')
+        .upsert({ id: session.user.id, cv_data: profileToCvData(next) })
+      if (error) throw error
+      setSaveState('saved')
+      setTimeout(() => setSaveState('idle'), 2000)
+    } catch (e) {
+      console.error(e)
+      setSaveState('error')
+      setTimeout(() => setSaveState('idle'), 3000)
+    }
+  }, [])
+
+  const saveAndClose = (section: EditSection, next: ProfileState) => {
+    setProfile(next)
+    setEditing((e) => (e === section ? null : e))
+    void persistProfile(next)
+  }
 
   useEffect(() => {
     const loadProfileData = async () => {
       try {
         const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
 
         if (session) {
           const { data: devData } = await supabase
@@ -54,11 +262,9 @@ export default function ProfileDashboard() {
             .eq('id', session.user.id)
             .single()
 
-          if (devData && devData.cv_data) {
-            setProfile(prev => ({
-              ...prev,
-              ...devData.cv_data
-            }))
+          if (devData?.cv_data) {
+            const cv = devData.cv_data as Record<string, any>
+            setProfile(mergeCvIntoProfile(cv, EMPTY_PROFILE))
           }
         }
 
@@ -76,46 +282,41 @@ export default function ProfileDashboard() {
                 Authorization: `Bearer ${session.provider_token}`,
                 Accept: 'application/vnd.github.v3+json',
               },
-            })
+            }),
           ])
 
           const repos = await reposRes.json()
           const userData = await userRes.json()
 
-          setProfile(prev => {
-            const updatedProfile = { ...prev }
+          setProfile((prev) => {
+            const updated: ProfileState = { ...prev }
 
             if (Array.isArray(repos) && repos.length > 0) {
-              updatedProfile.projects = repos.map((repo: any) => ({
+              updated.projects = repos.map((repo: any) => ({
                 title: repo.name,
-                summary: repo.description || "No description provided.",
+                summary: repo.description || 'No description provided.',
                 stack: repo.language ? [repo.language] : [],
-                link: repo.html_url
+                link: repo.html_url,
               }))
             }
 
             if (userData?.login) {
-              const githubUrl = `github.com/${userData.login}`
-              updatedProfile.socials = prev.socials.map(s =>
-                s.includes('github.com') ? githubUrl : s
-              )
-              if (!prev.socials.some(s => s.includes('github.com'))) {
-                updatedProfile.socials.push(githubUrl)
-              }
+              updated.github = `github.com/${userData.login}`
             }
 
             if (userData?.public_repos !== undefined) {
-              updatedProfile.metrics = {
-                ...prev.metrics,
-                github_commits: `${userData.public_repos} Repos`
+              updated.metrics = {
+                ...updated.metrics,
+                github_commits: `${userData.public_repos} Repos`,
               }
             }
 
-            return updatedProfile
+            void persistProfile(updated)
+            return updated
           })
         }
       } catch (error) {
-        console.error("Failed to fetch pinned repos:", error)
+        console.error('Failed to fetch profile:', error)
       } finally {
         setIsConnectingGithub(false)
         const searchParams = new URLSearchParams(window.location.search)
@@ -126,7 +327,7 @@ export default function ProfileDashboard() {
     }
 
     loadProfileData()
-  }, [])
+  }, [persistProfile])
 
   const connectGithub = async () => {
     const supabase = createClient()
@@ -134,18 +335,10 @@ export default function ProfileDashboard() {
       provider: 'github',
       options: {
         scopes: 'read:user repo',
-        redirectTo: `${window.location.origin}/auth/callback?next=/profile?github=true`
-      }
+        redirectTo: `${window.location.origin}/auth/callback?next=/profile?github=true`,
+      },
     })
   }
-
-  // Edit Modals State
-  const [editingHeader, setEditingHeader] = useState(false)
-  const [editingSkills, setEditingSkills] = useState(false)
-  const [editingKnowledge, setEditingKnowledge] = useState<number | null>(null)
-
-  // Temp Edit States
-  const [newSkill, setNewSkill] = useState("")
 
   const triggerRefresh = () => {
     setRefreshCooldown(true)
@@ -156,385 +349,731 @@ export default function ProfileDashboard() {
     const file = e.target.files?.[0]
     if (file) {
       const url = URL.createObjectURL(file)
-      setProfile(prev => ({ ...prev, profileImage: url }))
+      setProfile((prev) => ({ ...prev, profileImage: url }))
     }
   }
 
-  const handleKnowledgeImageUpload = (e: React.ChangeEvent<HTMLInputElement>, idx: number) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const url = URL.createObjectURL(file)
-      setProfile(prev => {
-        const newEdu = [...prev.education]
-        newEdu[idx] = { ...newEdu[idx], image: url }
-        return { ...prev, education: newEdu }
-      })
-    }
-  }
+  const contactLine = [profile.location, profile.email, profile.phone, profile.linkedin, profile.github]
+    .filter((s) => s && String(s).trim())
+    .join('  |  ')
 
-  const handleAddSkill = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newSkill.trim()) return
-    setProfile(prev => ({
-      ...prev,
-      skills: {
-        ...prev.skills,
-        unverified: [...prev.skills.unverified, newSkill.trim()]
-      }
-    }))
-    setNewSkill("")
-  }
+  const hasMetrics =
+    profile.metrics.hackerrank.trim() ||
+    profile.metrics.kaggle.trim() ||
+    profile.metrics.github_commits.trim()
 
-  const SectionHeader = ({ title, onEdit }: { title: string, onEdit?: () => void }) => (
-    <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 group">
-      <h2 className="text-4xl md:text-5xl font-black font-mono uppercase tracking-tighter text-white border-b-[6px] border-[#2563eb] pb-2 inline-block shadow-[0_4px_0_0_rgba(255,255,255,0.05)]">
-        {title}
-      </h2>
-      {onEdit && (
-        <button onClick={onEdit} className="mt-4 md:mt-0 p-3 border-4 border-[rgba(255,255,255,0.2)] hover:border-[#3b82f6] bg-black hover:bg-[#3b82f6]/10 rounded-none transition-all shadow-[4px_4px_0px_0px_rgba(255,255,255,0.1)] active:translate-y-1 active:shadow-none self-start md:self-auto">
-          <Pen className="w-5 h-5 text-gray-400 group-hover:text-[#60a5fa]" />
-        </button>
-      )}
+  const expBullets = (desc: string) =>
+    desc
+      .split(/\n+/)
+      .map((l) => l.replace(/^[•\-\*]\s*/, '').trim())
+      .filter(Boolean)
+
+  const SectionLabel = ({
+    id,
+    children,
+  }: {
+    id: EditSection
+    children: React.ReactNode
+  }) => (
+    <div className="mb-3 flex items-center justify-between gap-3 border-b border-black pb-1">
+      <h2 className="text-sm font-bold uppercase tracking-[0.12em]">{children}</h2>
+      <button
+        type="button"
+        onClick={() => setEditing((e) => (e === id ? null : id))}
+        className="shrink-0 rounded border border-neutral-300 p-1.5 text-neutral-600 hover:border-black hover:text-black"
+        aria-label={`Edit ${String(id)}`}
+      >
+        <Pen className="h-3.5 w-3.5" />
+      </button>
     </div>
   )
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans pb-32">
-
-      {/* Top Navigation */}
-      <nav className="border-b-4 border-[rgba(255,255,255,0.1)] bg-[#0a0a0a] sticky top-0 z-40 shadow-xl">
-        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-none border-2 border-white bg-[#2563eb] text-white shadow-[2px_2px_0px_0px_white]">
-              <span className="text-xl font-bold font-mono">T</span>
-            </div>
-            <span className="text-2xl font-black tracking-widest uppercase font-mono shadow-black drop-shadow-md">TECHub</span>
+    <div className="min-h-screen bg-white text-black antialiased">
+      <nav className="sticky top-0 z-40 border-b border-neutral-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-6">
+          <Link href="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+            <span className="flex h-8 w-8 items-center justify-center border border-black text-sm font-bold">T</span>
+            <span className="uppercase tracking-widest">TECHub</span>
           </Link>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {saveState === 'saving' && <span className="text-xs text-neutral-500">Saving…</span>}
+            {saveState === 'saved' && (
+              <span className="text-xs text-green-700 flex items-center gap-1">
+                <CheckCircle className="h-3 w-3" /> Saved
+              </span>
+            )}
+            {saveState === 'error' && <span className="text-xs text-red-600">Save failed</span>}
             <button
+              type="button"
+              onClick={() => void persistProfile(profile)}
+              className="text-xs font-medium uppercase tracking-wide text-neutral-600 hover:text-black"
+            >
+              Save
+            </button>
+            <button
+              type="button"
               onClick={triggerRefresh}
               disabled={refreshCooldown}
-              className="flex items-center gap-2 px-6 py-3 border-2 border-[rgba(255,255,255,0.2)] bg-black text-xs md:text-sm font-mono font-bold uppercase hover:bg-[rgba(255,255,255,0.1)] disabled:opacity-50 disabled:cursor-not-allowed shadow-[4px_4px_0px_0px_rgba(255,255,255,0.1)] active:translate-y-1 active:shadow-none transition-all"
+              className="flex items-center gap-1 text-xs font-medium text-neutral-600 hover:text-black disabled:opacity-50"
             >
-              <RotateCcw className={`w-4 h-4 ${refreshCooldown ? 'animate-spin' : ''}`} />
-              {refreshCooldown ? 'Cooldown (6d 23h)' : 'Refresh APIs'}
+              <RotateCcw className={`h-3.5 w-3.5 ${refreshCooldown ? 'animate-spin' : ''}`} />
+              Refresh
             </button>
-            <Link href="/opportunities" className="rounded-none border-2 border-[#3b82f6] bg-[#3b82f6] text-black px-6 py-3 text-xs md:text-sm font-black font-mono uppercase hover:bg-[#60a5fa] shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] active:translate-y-1 active:shadow-none transition-all">
-              Back to Dashboard
+            <Link href="/opportunities" className="text-xs font-semibold uppercase tracking-wide hover:underline">
+              Dashboard
             </Link>
           </div>
         </div>
       </nav>
 
-      <main className="mx-auto max-w-7xl px-4 py-16">
-
-        {/* HEADER SECTION (ULTRA PREMIUM BRUTALIST) */}
-        <section className="relative flex flex-col xl:flex-row gap-10 items-start mb-32 p-10 md:p-14 border-[6px] border-[rgba(255,255,255,0.1)] bg-[#0a0a0a] shadow-[16px_16px_0px_0px_rgba(255,255,255,0.05)] group">
-          <button onClick={() => setEditingHeader(true)} className="absolute top-6 right-6 p-4 border-4 border-[rgba(255,255,255,0.2)] bg-black hover:border-[#3b82f6] hover:bg-[#3b82f6]/10 rounded-none hidden group-hover:block transition-all z-10 shadow-[4px_4px_0px_0px_rgba(255,255,255,0.1)]">
-            <Pen className="w-6 h-6 text-gray-400 group-hover:text-[#60a5fa]" />
+      <main className="mx-auto max-w-3xl px-6 py-12 pb-24">
+        {/* Header — centered ATS style */}
+        <header className="relative mb-12 text-center z-10">
+          <button
+            type="button"
+            onClick={() => setEditing((e) => (e === 'header' ? null : 'header'))}
+            className="absolute right-0 top-0 rounded border border-neutral-300 p-1.5 text-neutral-600 hover:border-black"
+            aria-label="Edit header"
+          >
+            <Pen className="h-3.5 w-3.5" />
           </button>
 
-          <label className="w-48 h-48 border-4 border-dashed border-[rgba(255,255,255,0.3)] bg-black flex flex-col items-center justify-center text-gray-500 shrink-0 hover:border-[#3b82f6] hover:text-[#60a5fa] cursor-pointer transition-all relative overflow-hidden group/image shadow-[inset_0_0_30px_rgba(0,0,0,1)]">
+          <label className="mx-auto mb-6 flex h-28 w-24 cursor-pointer items-center justify-center border border-dashed border-neutral-400 bg-neutral-50 text-xs text-neutral-500 hover:border-black">
             <input type="file" accept="image/*" className="hidden" onChange={handleProfileImageUpload} />
             {profile.profileImage ? (
-              <img src={profile.profileImage} alt="Profile" className="w-full h-full object-cover" />
+              <img src={profile.profileImage} alt="" className="h-full w-full object-cover" />
             ) : (
-              <span className="text-base uppercase font-black font-mono text-center px-4 pointer-events-none">Add Photo</span>
+              <span className="px-2 text-center">Photo</span>
             )}
-            <div className={`absolute inset-0 bg-[#2563eb]/80 flex items-center justify-center transition-opacity ${profile.profileImage ? 'opacity-0 group-hover/image:opacity-100' : 'opacity-0'}`}>
-              <Pen className="w-10 h-10 text-white" />
-            </div>
           </label>
 
-          <div className="flex-1 mt-2">
-            <h1 className="text-6xl md:text-7xl font-black uppercase tracking-tighter mb-4 text-transparent bg-clip-text bg-gradient-to-r from-white to-[#60a5fa] leading-none drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]">{profile.name}</h1>
-            <p className="text-3xl text-[#60a5fa] font-mono font-bold mb-8 tracking-tight drop-shadow-md">{profile.title}</p>
-            <div className="flex flex-wrap gap-x-6 gap-y-4 text-base md:text-lg text-gray-300 font-mono uppercase font-bold">
-              <span className="bg-[#111] px-4 py-2 border-[3px] border-[rgba(255,255,255,0.1)] shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)]">{profile.email}</span>
-              {profile.socials.map(s => <a href={`https://${s}`} target="_blank" rel="noopener noreferrer" key={s} className="bg-[#111] px-4 py-2 border-[3px] border-[rgba(255,255,255,0.1)] hover:border-[#60a5fa] hover:text-[#60a5fa] transition-colors shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)]">{s}</a>)}
-            </div>
-          </div>
+          {editing === 'header' ? (
+            <HeaderEditor
+              profile={profile}
+              onCancel={() => setEditing(null)}
+              onSave={(p) => saveAndClose('header', p)}
+            />
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold uppercase tracking-[0.08em] md:text-3xl">{profile.name}</h1>
+              <p className="mt-2 text-center text-sm font-semibold leading-snug text-neutral-800 md:text-base">
+                {profile.title}
+              </p>
+              <p className="mt-4 text-center text-xs leading-relaxed text-neutral-600 md:text-sm">{contactLine}</p>
+            </>
+          )}
 
-          {/* Export Action CTA - EXACT TEAM 1 REQUIREMENTS */}
-          <div className="w-full xl:w-auto mt-12 xl:mt-0 relative shrink-0">
+          <div className="mt-8 flex flex-col items-center gap-2">
             <button
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="w-full xl:w-[340px] flex flex-col items-center justify-center gap-3 bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-black uppercase tracking-[0.15em] px-8 py-8 border-[6px] border-white shadow-[12px_12px_0px_0px_rgba(255,255,255,0.2)] hover:shadow-[12px_12px_0px_0px_rgba(255,255,255,0.05)] active:translate-y-2 active:shadow-none transition-all group"
+              type="button"
+              onClick={() => setDropdownOpen((o) => !o)}
+              className="flex flex-col items-center gap-1 text-xs text-neutral-600 hover:text-black"
             >
-              <Download className="w-10 h-10 mb-2 group-hover:-translate-y-1 transition-transform" />
-              <span className="text-2xl text-center leading-tight">Export<br />ATS CV</span>
+              <Download className="h-5 w-5" />
+              <span className="font-medium uppercase tracking-wide">Export ATS CV</span>
             </button>
-
             {dropdownOpen && (
-              <div className="absolute top-full mt-6 right-0 w-full bg-[#0a0a0a] border-[6px] border-[#3b82f6] shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] z-20 flex flex-col font-mono text-base uppercase font-bold">
-                <div className="p-6 border-b-[4px] border-[#3b82f6] bg-[#2563eb] text-white font-black flex items-center justify-center gap-3 tracking-[0.2em] shadow-inner">
-                  <CheckCircle className="w-5 h-5" /> TECHub Proven
+              <div className="absolute z-20 mt-24 w-56 border border-black bg-white shadow-lg">
+                <div className="border-b border-neutral-200 px-4 py-2 text-center text-[10px] font-bold uppercase tracking-widest text-neutral-500">
+                  Proven export
                 </div>
-                <button className="px-6 py-5 text-center hover:bg-[#111] border-b-2 border-white/10 transition-colors">.PDF Format</button>
-                <button className="px-6 py-5 text-center hover:bg-[#111] border-b-2 border-white/10 transition-colors">.DOCX Format</button>
-                <button className="px-6 py-5 text-center hover:bg-[#111] transition-colors">.JSON Format</button>
+                <button type="button" className="block w-full px-4 py-3 text-left text-sm hover:bg-neutral-100">
+                  PDF
+                </button>
+                <button type="button" className="block w-full px-4 py-3 text-left text-sm hover:bg-neutral-100">
+                  DOCX
+                </button>
+                <button type="button" className="block w-full px-4 py-3 text-left text-sm hover:bg-neutral-100">
+                  JSON
+                </button>
               </div>
             )}
           </div>
+        </header>
+
+        {/* Summary */}
+        <section className="mb-10">
+          <SectionLabel id="summary">Summary</SectionLabel>
+          {editing === 'summary' ? (
+            <SummaryEditor
+              value={profile.summary}
+              onCancel={() => setEditing(null)}
+              onSave={(summary) => saveAndClose('summary', { ...profile, summary })}
+            />
+          ) : profile.summary.trim() ? (
+            <p className="text-sm leading-relaxed text-neutral-800 text-left">{profile.summary}</p>
+          ) : (
+            <p className="text-sm text-neutral-400">Add a summary with the edit control above.</p>
+          )}
         </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-20 gap-y-24">
+        {/* Skills */}
+        <section className="mb-10">
+          <SectionLabel id="skills">Skills</SectionLabel>
+          {editing === 'skills' ? (
+            <SkillsEditor
+              skills={profile.skills}
+              onCancel={() => setEditing(null)}
+              onSave={(skills) => saveAndClose('skills', { ...profile, skills })}
+            />
+          ) : profile.skills.length > 0 ? (
+            <p className="text-sm leading-relaxed">{profile.skills.join(', ')}</p>
+          ) : (
+            <p className="text-sm text-neutral-400">No skills yet. Click edit to add.</p>
+          )}
+        </section>
 
-          {/* LEFT COLUMN: Main Timelines & Projects */}
-          <div className="lg:col-span-7 space-y-24">
-
-            {/* WORK HISTORY MAP */}
-            <section className="relative">
-              <SectionHeader title="Work History" onEdit={() => { }} />
-              {/* Continuous vertical timeline track */}
-              <div className="absolute left-[38px] top-[140px] bottom-10 w-[4px] bg-[rgba(255,255,255,0.05)]" />
-
-              <div className="space-y-16 pl-4 mt-12 relative">
+        {/* Experience */}
+        <section className="mb-10">
+            <SectionLabel id="experience">Experience</SectionLabel>
+            {editing === 'experience' ? (
+              <ExperienceEditor
+                items={profile.experience}
+                onCancel={() => setEditing(null)}
+                onSave={(experience) => saveAndClose('experience', { ...profile, experience })}
+              />
+            ) : profile.experience.length > 0 ? (
+              <div className="space-y-8">
                 {profile.experience.map((exp, i) => (
-                  <div key={i} className="relative pl-16 group hover:-translate-y-1 transition-transform">
-                    {/* Retro chunky node explicitly mounted on the timeline */}
-                    <div className="absolute w-6 h-6 bg-white top-2 left-[27px] outline outline-[10px] outline-[#050505] group-hover:bg-[#3b82f6] transition-colors shadow-[0_0_20px_rgba(255,255,255,0.5)] group-hover:shadow-[0_0_20px_rgba(59,130,246,0.8)] z-10" />
-
-                    <h3 className="text-4xl md:text-5xl font-black uppercase tracking-tighter mb-4 text-white drop-shadow-sm">{exp.role}</h3>
-
-                    <div className="flex flex-col sm:flex-row sm:items-center text-sm md:text-lg font-mono font-bold text-[#60a5fa] mb-6 bg-[#0a0a0a] border-[3px] border-[rgba(255,255,255,0.1)] border-l-[6px] border-l-[#2563eb] p-4 shadow-[6px_6px_0px_0px_rgba(0,0,0,0.5)]">
-                      <span className="uppercase tracking-widest">{exp.company}</span>
-                      <span className="sm:ml-auto text-gray-500 tracking-wider mt-2 sm:mt-0">{exp.years}</span>
-                    </div>
-
-                    <p className="text-gray-400 leading-relaxed text-xl font-medium tracking-wide border-l-4 border-transparent hover:border-[rgba(255,255,255,0.1)] pl-4 transition-all">{exp.desc}</p>
-                  </div>
+                  <article key={i}>
+                    <h3 className="text-sm font-bold">{exp.role}</h3>
+                    <p className="mt-1 text-sm italic text-neutral-700">
+                      {[exp.company, exp.location, exp.period].filter(Boolean).join('  |  ')}
+                    </p>
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-neutral-800">
+                      {expBullets(exp.desc).map((b, j) => (
+                        <li key={j}>{b}</li>
+                      ))}
+                    </ul>
+                  </article>
                 ))}
               </div>
-            </section>
+            ) : (
+              <p className="text-sm text-neutral-400">No work history. Click edit to add roles.</p>
+            )}
+        </section>
 
-            {/* KNOWLEDGE HISTORY */}
-            <section className="relative">
-              <SectionHeader title="Knowledge Base" />
-              <div className="absolute left-[38px] top-[140px] bottom-10 w-[4px] bg-[rgba(59,130,246,0.1)]" />
-
-              <div className="space-y-16 pl-4 mt-12 relative">
-                {profile.education.map((edu, i) => (
-                  <div key={i} className="relative pl-16 group hover:-translate-y-1 transition-transform">
-                    <button onClick={() => setEditingKnowledge(i)} className="absolute top-0 right-0 p-4 border-4 border-[rgba(255,255,255,0.2)] bg-black hover:border-[#3b82f6] hover:text-[#60a5fa] rounded-none hidden xl:group-hover:block transition-all shadow-[6px_6px_0px_0px_rgba(255,255,255,0.1)] z-20">
-                      <Pen className="w-5 h-5" />
-                    </button>
-                    {/* Fixed blue Square node */}
-                    <div className="absolute w-6 h-6 bg-[#2563eb] top-2 left-[27px] shadow-[0_0_25px_rgba(37,99,235,1)] outline outline-[10px] outline-[#050505] z-10 group-hover:bg-[#60a5fa]" />
-
-                    <h3 className="text-3xl md:text-4xl font-black uppercase tracking-tighter mb-4 pr-20 text-white drop-shadow-sm leading-tight">{edu.degree}</h3>
-
-                    <div className="flex flex-col sm:flex-row sm:items-center text-sm md:text-lg font-mono font-bold text-gray-300 mb-5 uppercase bg-[#0a0a0a] border-[3px] border-[rgba(255,255,255,0.1)] border-l-[6px] border-l-[#60a5fa] p-4 shadow-[6px_6px_0px_0px_rgba(0,0,0,0.5)]">
-                      <span className="tracking-widest">{edu.school}</span>
-                      <span className="sm:ml-auto text-gray-500 tracking-wider mt-2 sm:mt-0">{edu.years}</span>
-                    </div>
-
-                    {edu.desc && <p className="text-gray-400 text-lg mb-6 italic tracking-wide pl-4 border-l-4 border-transparent group-hover:border-[rgba(255,255,255,0.1)] transition-all">{edu.desc}</p>}
-
-                    {edu.image && (
-                      <div className="mt-6 border-4 border-[#3b82f6] p-2 max-w-[300px] bg-black shadow-[8px_8px_0px_0px_rgba(0,0,0,0.5)] group-hover:shadow-[8px_8px_0px_0px_rgba(59,130,246,0.3)] transition-all">
-                        <img src={edu.image} alt="Certificate" className="w-full h-auto grayscale group-hover:grayscale-0 transition-all duration-500" />
-                      </div>
+        {/* Projects */}
+        <section className="mb-10">
+          <div className="mb-3 flex items-center justify-between gap-3 border-b border-black pb-1">
+            <h2 className="text-sm font-bold uppercase tracking-[0.12em]">Projects</h2>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={connectGithub}
+                disabled={isConnectingGithub}
+                className="flex items-center gap-1 rounded border border-neutral-300 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-600 hover:border-black disabled:opacity-50"
+              >
+                {isConnectingGithub ? (
+                  <RotateCcw className="h-3 w-3 animate-spin" />
+                ) : (
+                  <GitBranch className="h-3 w-3" />
+                )}
+                GitHub
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditing((e) => (e === 'projects' ? null : 'projects'))}
+                className="rounded border border-neutral-300 p-1.5 text-neutral-600 hover:border-black"
+              >
+                <Pen className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+          {editing === 'projects' ? (
+            <ProjectsEditor
+              items={profile.projects}
+              onCancel={() => setEditing(null)}
+              onSave={(projects) => saveAndClose('projects', { ...profile, projects })}
+            />
+          ) : profile.projects.length > 0 ? (
+            <div className="space-y-8">
+              {profile.projects.map((proj, i) => (
+                <article key={i}>
+                  <div className="flex items-start justify-between gap-4">
+                    <h3 className="text-sm font-bold">{proj.title}</h3>
+                    {proj.link && proj.link !== '#' && (
+                      <a
+                        href={proj.link.startsWith('http') ? proj.link : `https://${proj.link}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 text-neutral-500 hover:text-black"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
                     )}
                   </div>
-                ))}
-              </div>
-            </section>
-
-          </div>
-
-          {/* RIGHT COLUMN: Skills & Metrics */}
-          <div className="lg:col-span-5 space-y-24">
-
-            {/* SKILLS SET MATRIX */}
-            <section>
-              <SectionHeader title="Skills Matrix" onEdit={() => setEditingSkills(true)} />
-
-              <div className="mt-12 bg-[#0a0a0a] p-10 border-[6px] border-[rgba(255,255,255,0.1)] shadow-[12px_12px_0px_0px_rgba(34,197,94,0.15)] relative overflow-hidden group hover:border-[#22c55e]/50 transition-colors">
-                <div className="absolute top-0 right-0 w-48 h-48 bg-[#22c55e]/10 blur-[80px] rounded-full point-events-none transition-opacity duration-1000 group-hover:bg-[#22c55e]/20" />
-
-                <h3 className="text-base font-black font-mono uppercase text-[#4ade80] mb-8 flex items-center gap-4 tracking-[0.2em] border-b-4 border-[#22c55e]/30 pb-4 drop-shadow-[0_0_10px_rgba(34,197,94,0.5)]">
-                  <CheckCircle className="w-6 h-6" /> AI-Verified Set
-                </h3>
-
-                {/* As per user Team 1 rule: "Verified Skills (Blue/Green Tags with a checkmark)" */}
-                <div className="flex flex-wrap gap-4 relative z-10">
-                  {profile.skills.verified.map(skill => (
-                    <span key={skill} className="inline-flex items-center gap-3 px-5 py-3 bg-[#2563eb] border-2 border-[rgba(255,255,255,0.3)] text-white text-base md:text-lg font-bold font-mono tracking-widest shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[4px_8px_0px_0px_rgba(0,0,0,1)] transition-all cursor-default">
-                      {skill} <CheckCircle className="w-5 h-5 text-[#86efac]" />
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-12 bg-[#0a0a0a] p-10 border-[6px] border-[rgba(255,255,255,0.05)] shadow-[12px_12px_0px_0px_rgba(255,255,255,0.05)] relative overflow-hidden">
-                <h3 className="text-base font-black font-mono uppercase text-gray-500 mb-8 flex items-center gap-4 tracking-[0.2em] border-b-4 border-[rgba(255,255,255,0.1)] pb-4">
-                  Manual Unverified
-                </h3>
-
-                {/* As per user Team 1 rule: "Unverified Skills (White/Gray Tags, muted)" */}
-                <div className="flex flex-wrap gap-3 relative z-10">
-                  {profile.skills.unverified.map(skill => (
-                    <span key={skill} className="px-5 py-3 bg-black border-2 border-[rgba(255,255,255,0.2)] text-gray-400 text-sm font-bold font-mono tracking-widest transition-colors cursor-default hover:border-white hover:text-white hover:-translate-y-1">
-                      {skill}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            {/* PROJECTS SECTION */}
-            <section>
-              <SectionHeader title="Projects Grid" onEdit={() => { }} />
-
-              <div className="mb-8 mt-4 relative flex justify-end">
-                <button
-                  onClick={connectGithub}
-                  disabled={isConnectingGithub}
-                  className="flex items-center gap-3 px-6 py-4 bg-black text-white border-[4px] border-[rgba(255,255,255,0.2)] hover:border-[#3b82f6] font-mono font-black uppercase transition-all shadow-[6px_6px_0_0_rgba(255,255,255,0.1)] hover:shadow-[6px_6px_0_0_rgba(59,130,246,0.3)] active:translate-y-1 active:shadow-none group disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isConnectingGithub ? (
-                    <RotateCcw className="w-6 h-6 animate-spin text-[#60a5fa]" />
-                  ) : (
-                    <Github className="w-6 h-6 text-gray-400 group-hover:text-[#60a5fa]" />
-                  )}
-                  {isConnectingGithub ? "Syncing Repos..." : (profile.projects.length > 0 ? "Sync GitHub" : "Connect GitHub")}
-                </button>
-              </div>
-
-              <div className="space-y-8">
-                {profile.projects.map((proj, i) => (
-                  <div key={i} className="border-[6px] border-[rgba(255,255,255,0.1)] p-8 bg-[#0a0a0a] hover:border-[#3b82f6]/60 transition-all flex flex-col h-full shadow-[8px_8px_0px_0px_rgba(255,255,255,0.05)] hover:shadow-[12px_12px_0px_0px_rgba(59,130,246,0.3)] hover:-translate-x-2 group">
-                    <div className="flex justify-between items-start mb-6">
-                      <h3 className="font-bold text-3xl uppercase tracking-tighter leading-none pr-4 text-white drop-shadow-sm">{proj.title}</h3>
-                      <a href={proj.link} className="p-3 border-4 border-[rgba(255,255,255,0.2)] hover:border-[#60a5fa] hover:text-[#60a5fa] bg-black transition-colors shrink-0 shadow-[4px_4px_0_0_rgba(0,0,0,1)] hover:shadow-none translate-x-[4px] translate-y-[-4px] hover:translate-x-0 hover:translate-y-0">
-                        <ExternalLink className="w-5 h-5" />
-                      </a>
-                    </div>
-                    <p className="text-lg text-gray-400 mb-8 flex-1 leading-relaxed font-mono font-medium">{proj.summary}</p>
-                    <div className="flex flex-wrap gap-3 mt-auto">
-                      {proj.stack.map(s => (
-                        <span key={s} className="px-3 py-1.5 bg-black border-2 border-[#3b82f6]/50 text-xs font-mono font-black uppercase text-[#60a5fa]">{s}</span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            {/* METRICS WIDGET */}
-            <section>
-              <SectionHeader title="Live Metrics" />
-              <div className="mt-12 border-[6px] border-[rgba(255,255,255,0.1)] bg-gradient-to-br from-[#0a0a0a] to-[#111] p-10 space-y-12 shadow-[12px_12px_0px_0px_rgba(255,255,255,0.05)] group hover:border-[#3b82f6]/40 transition-colors">
-                <div className="border-l-[6px] border-[#2563eb] pl-8 hover:pl-10 transition-all">
-                  <h4 className="text-base font-black font-mono uppercase text-gray-400 mb-3 tracking-[0.2em]">HackerRank</h4>
-                  <p className="font-black text-4xl xl:text-5xl text-white tracking-tighter uppercase drop-shadow-[0_0_15px_rgba(59,130,246,0.3)]">{profile.metrics.hackerrank}</p>
-                </div>
-                <div className="border-l-[6px] border-[#60a5fa] pl-8 hover:pl-10 transition-all">
-                  <h4 className="text-base font-black font-mono uppercase text-gray-400 mb-3 tracking-[0.2em]">Kaggle</h4>
-                  <p className="font-black text-4xl xl:text-5xl text-white tracking-tighter uppercase drop-shadow-[0_0_15px_rgba(59,130,246,0.3)]">{profile.metrics.kaggle}</p>
-                </div>
-                <div className="border-l-[6px] border-[rgba(255,255,255,0.3)] pl-8 hover:pl-10 transition-all">
-                  <h4 className="text-base font-black font-mono uppercase text-gray-400 mb-3 tracking-[0.2em]">GitHub Activity</h4>
-                  <p className="font-black text-4xl xl:text-5xl text-white tracking-tighter uppercase drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">{profile.metrics.github_commits}</p>
-                </div>
-              </div>
-            </section>
-
-          </div>
-        </div>
-      </main>
-
-      {/* EDIT MODALS OVERLAYS */}
-      {editingHeader && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0a0a0a] border-[6px] border-[#3b82f6] p-8 md:p-14 w-full max-w-2xl relative shadow-[20px_20px_0px_0px_rgba(37,99,235,0.4)] animate-in zoom-in-95 duration-200">
-            <button onClick={() => setEditingHeader(false)} className="absolute top-6 right-6 text-gray-500 hover:text-white transition-colors bg-black border-4 border-[rgba(255,255,255,0.1)] p-3">
-              <X className="w-8 h-8" />
-            </button>
-            <h2 className="text-4xl font-black uppercase mb-10 font-mono tracking-tight text-[#60a5fa] border-b-4 border-[rgba(255,255,255,0.1)] pb-6">Edit Profile Header</h2>
-            <div className="space-y-8 font-mono text-sm uppercase font-bold text-gray-400">
-              <div className="space-y-3">
-                <label className="block pl-1 tracking-widest text-[#60a5fa]">Full Name</label>
-                <input type="text" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} className="w-full bg-black border-4 border-[rgba(255,255,255,0.2)] p-5 text-white focus:outline-none focus:border-[#3b82f6] transition-colors text-xl font-sans font-black" />
-              </div>
-              <div className="space-y-3">
-                <label className="block pl-1 tracking-widest text-[#60a5fa]">Job Title</label>
-                <input type="text" value={profile.title} onChange={(e) => setProfile({ ...profile, title: e.target.value })} className="w-full bg-black border-4 border-[rgba(255,255,255,0.2)] p-5 text-white focus:outline-none focus:border-[#3b82f6] transition-colors text-xl font-sans font-black" />
-              </div>
-              <div className="space-y-3">
-                <label className="block pl-1 tracking-widest text-[#60a5fa]">Social Links (Comma separated)</label>
-                <input type="text" value={profile.socials.join(", ")} onChange={(e) => setProfile({ ...profile, socials: e.target.value.split(",").map(s => s.trim()) })} className="w-full bg-black border-4 border-[rgba(255,255,255,0.2)] p-5 text-gray-300 focus:outline-none focus:border-[#3b82f6] transition-colors text-lg normal-case font-mono" placeholder="twitter.com/dev, instagr.am/dev" />
-              </div>
-              <button onClick={() => setEditingHeader(false)} className="w-full bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-black uppercase p-8 mt-10 transition-colors border-[6px] border-white text-2xl tracking-[0.2em] shadow-[8px_8px_0px_0px_rgba(255,255,255,0.2)] active:translate-y-2 active:shadow-none">Save Changes</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {editingSkills && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0a0a0a] border-[6px] border-[#3b82f6] p-8 md:p-14 w-full max-w-3xl relative shadow-[20px_20px_0px_0px_rgba(37,99,235,0.4)] animate-in slide-in-from-bottom-8 duration-300">
-            <button onClick={() => setEditingSkills(false)} className="absolute top-6 right-6 text-gray-500 hover:text-white transition-colors bg-black border-4 border-[rgba(255,255,255,0.1)] p-3">
-              <X className="w-8 h-8" />
-            </button>
-            <h2 className="text-4xl font-black uppercase mb-6 font-mono tracking-tight text-[#60a5fa]">Manual Skills Input</h2>
-            <p className="text-gray-400 text-base mb-10 font-mono leading-relaxed bg-[#111] p-6 border-l-[6px] border-[#3b82f6]">User-added skills will strictly format to the standard Unverified gray block. Only our AI matrix crawler upgrades them to Green/Verified tags.</p>
-
-            <form onSubmit={handleAddSkill} className="flex gap-4 font-mono mb-12">
-              <input type="text" value={newSkill} onChange={(e) => setNewSkill(e.target.value)} className="flex-1 bg-black border-4 border-[rgba(255,255,255,0.2)] p-5 text-white focus:outline-none focus:border-[#3b82f6] transition-colors text-xl" placeholder="Type a new skill (e.g., Ruby)..." />
-              <button type="submit" className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white border-4 border-white px-10 font-black uppercase tracking-[0.2em] text-xl shadow-[6px_6px_0px_0px_rgba(255,255,255,0.2)] active:translate-y-1 active:shadow-none transition-all">Add</button>
-            </form>
-
-            <div className="flex flex-wrap gap-4 max-h-[400px] overflow-y-auto p-2 pr-4">
-              {profile.skills.unverified.map((skill, idx) => (
-                <span key={idx} className="inline-flex items-center gap-4 px-5 py-3 bg-[#111] border-2 border-[rgba(255,255,255,0.2)] text-gray-300 text-lg font-bold font-mono group">
-                  {skill}
-                  <button
-                    onClick={() => setProfile(prev => ({ ...prev, skills: { ...prev.skills, unverified: prev.skills.unverified.filter((_, i) => i !== idx) } }))}
-                    className="p-1.5 bg-black hover:bg-red-500 text-gray-500 hover:text-white border-2 border-[rgba(255,255,255,0.1)] transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </span>
+                  <p className="mt-2 text-sm leading-relaxed text-neutral-800">{proj.summary}</p>
+                </article>
               ))}
             </div>
-          </div>
-        </div>
-      )}
+          ) : (
+            <p className="text-sm text-neutral-400">No projects. Connect GitHub or click edit.</p>
+          )}
+        </section>
 
-      {editingKnowledge !== null && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0a0a0a] border-[6px] border-[#3b82f6] p-8 md:p-14 w-full max-w-2xl relative shadow-[20px_20px_0px_0px_rgba(37,99,235,0.4)] animate-in zoom-in-95 duration-200">
-            <button onClick={() => setEditingKnowledge(null)} className="absolute top-6 right-6 text-gray-500 hover:text-white transition-colors bg-black border-4 border-[rgba(255,255,255,0.1)] p-3">
-              <X className="w-8 h-8" />
-            </button>
-            <h2 className="text-4xl font-black uppercase mb-10 font-mono tracking-tight text-[#60a5fa]">Attach Proof Document</h2>
-            <div className="space-y-8 font-mono text-base">
-              <div className="bg-black border-[6px] border-[rgba(255,255,255,0.1)] p-8 mb-8 relative overflow-hidden">
-                <div className="absolute top-0 bottom-0 left-0 w-4 bg-[#2563eb]" />
-                <div className="absolute top-0 right-0 w-32 h-32 bg-[#3b82f6]/10 rounded-none blur-3xl" />
-                <p className="text-[#60a5fa] font-black text-2xl mb-3 uppercase tracking-tighter pl-6">{profile.education[editingKnowledge].degree}</p>
-                <p className="text-gray-400 font-bold uppercase tracking-widest pl-6">{profile.education[editingKnowledge].school}</p>
-              </div>
-
-              <label className="flex flex-col items-center justify-center p-16 border-[6px] border-dashed border-[rgba(255,255,255,0.2)] cursor-pointer hover:border-[#3b82f6] hover:bg-[#3b82f6]/5 transition-all group bg-[#111] shadow-[inset_0_0_30px_rgba(0,0,0,1)]">
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleKnowledgeImageUpload(e, editingKnowledge)} />
-                <ImageIcon className="w-16 h-16 mb-8 text-gray-500 group-hover:text-[#60a5fa] transition-colors" />
-                <span className="text-gray-400 group-hover:text-white text-center font-black uppercase tracking-[0.15em] text-lg px-8">Upload an image of the certificate or proof</span>
-              </label>
-
-              {profile.education[editingKnowledge].image && (
-                <div className="mt-10 p-6 border-[6px] border-[rgba(255,255,255,0.1)] bg-black shadow-[8px_8px_0px_0px_rgba(0,0,0,0.5)]">
-                  <span className="block text-[#60a5fa] font-black uppercase tracking-[0.2em] mb-6">Preview Attached Proof</span>
-                  <img src={profile.education[editingKnowledge].image} alt="Preview" className="w-full h-auto grayscale border-4 border-white/20" />
-                </div>
-              )}
+        {/* Education */}
+        <section className="mb-10">
+          <SectionLabel id="education">Education</SectionLabel>
+          {editing === 'education' ? (
+            <EducationEditor
+              items={profile.education}
+              onCancel={() => setEditing(null)}
+              onSave={(education) => saveAndClose('education', { ...profile, education })}
+            />
+          ) : profile.education.length > 0 ? (
+            <div className="space-y-8">
+              {profile.education.map((edu, i) => (
+                <article key={i}>
+                  <h3 className="text-sm font-bold">{edu.degree}</h3>
+                  <p className="mt-1 text-sm italic text-neutral-700">
+                    {[edu.school, edu.years].filter(Boolean).join('  |  ')}
+                  </p>
+                  {edu.desc && <p className="mt-2 text-sm text-neutral-800">{edu.desc}</p>}
+                  {edu.image && (
+                    <img src={edu.image} alt="" className="mt-4 max-h-48 border border-neutral-200 object-contain" />
+                  )}
+                </article>
+              ))}
             </div>
-          </div>
-        </div>
-      )}
+          ) : (
+            <p className="text-sm text-neutral-400">No education entries. Click edit to add.</p>
+          )}
+        </section>
 
+        {/* Metrics — optional ATS footer */}
+        <section className="mb-10">
+          <SectionLabel id="metrics">Highlights</SectionLabel>
+          {editing === 'metrics' ? (
+            <MetricsEditor
+              metrics={profile.metrics}
+              onCancel={() => setEditing(null)}
+              onSave={(metrics) => saveAndClose('metrics', { ...profile, metrics })}
+            />
+          ) : hasMetrics ? (
+            <div className="space-y-4 text-sm">
+              {profile.metrics.hackerrank.trim() ? (
+                <p>
+                  <span className="font-bold">HackerRank: </span>
+                  {profile.metrics.hackerrank}
+                </p>
+              ) : null}
+              {profile.metrics.kaggle.trim() ? (
+                <p>
+                  <span className="font-bold">Kaggle: </span>
+                  {profile.metrics.kaggle}
+                </p>
+              ) : null}
+              {profile.metrics.github_commits.trim() ? (
+                <p>
+                  <span className="font-bold">GitHub: </span>
+                  {profile.metrics.github_commits}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-400">No highlights. Click edit to add optional metrics.</p>
+          )}
+        </section>
+      </main>
+    </div>
+  )
+}
+
+function HeaderEditor({
+  profile,
+  onCancel,
+  onSave,
+}: {
+  profile: ProfileState
+  onCancel: () => void
+  onSave: (p: ProfileState) => void
+}) {
+  const [draft, setDraft] = useState(profile)
+  return (
+    <div className="mx-auto max-w-lg space-y-3 text-left">
+      {(['name', 'title', 'email', 'location', 'phone', 'linkedin', 'github'] as const).map((field) => (
+        <div key={field}>
+          <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">{field}</label>
+          <input
+            className="mt-0.5 w-full border border-neutral-300 px-2 py-1.5 text-sm focus:border-black focus:outline-none"
+            value={draft[field]}
+            onChange={(e) => setDraft({ ...draft, [field]: e.target.value })}
+          />
+        </div>
+      ))}
+      <div className="flex gap-2 pt-2">
+        <button
+          type="button"
+          className="border border-black bg-black px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white"
+          onClick={() => onSave(draft)}
+        >
+          Save
+        </button>
+        <button type="button" className="px-4 py-2 text-xs text-neutral-600 hover:text-black" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function SummaryEditor({
+  value,
+  onCancel,
+  onSave,
+}: {
+  value: string
+  onCancel: () => void
+  onSave: (s: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  return (
+    <div>
+      <textarea
+        className="min-h-[140px] w-full border border-neutral-300 p-3 text-sm focus:border-black focus:outline-none"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          className="border border-black bg-black px-4 py-2 text-xs font-semibold uppercase text-white"
+          onClick={() => onSave(draft)}
+        >
+          Save
+        </button>
+        <button type="button" className="text-xs text-neutral-600" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function SkillsEditor({
+  skills,
+  onCancel,
+  onSave,
+}: {
+  skills: string[]
+  onCancel: () => void
+  onSave: (skills: string[]) => void
+}) {
+  const [str, setStr] = useState(skills.join(', '))
+  return (
+    <div className="space-y-3 text-sm">
+      <div>
+        <label className="text-[10px] font-bold uppercase text-neutral-500">Skills (comma-separated)</label>
+        <input
+          className="mt-1 w-full border border-neutral-300 px-2 py-1.5 focus:border-black focus:outline-none"
+          value={str}
+          onChange={(e) => setStr(e.target.value)}
+        />
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button
+          type="button"
+          className="border border-black bg-black px-4 py-2 text-xs font-semibold uppercase text-white"
+          onClick={() =>
+            onSave(
+              str
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean),
+            )
+          }
+        >
+          Save
+        </button>
+        <button type="button" className="text-xs text-neutral-600" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ExperienceEditor({
+  items,
+  onCancel,
+  onSave,
+}: {
+  items: ExperienceItem[]
+  onCancel: () => void
+  onSave: (items: ExperienceItem[]) => void
+}) {
+  const [draft, setDraft] = useState(JSON.parse(JSON.stringify(items)) as ExperienceItem[])
+  const update = (i: number, patch: Partial<ExperienceItem>) => {
+    setDraft((d) => d.map((row, j) => (j === i ? { ...row, ...patch } : row)))
+  }
+  return (
+    <div className="space-y-6 border border-neutral-200 p-4">
+      {draft.map((row, i) => (
+        <div key={i} className="space-y-2 border-b border-neutral-100 pb-4 last:border-0">
+          <input
+            placeholder="Role"
+            className="w-full border border-neutral-300 px-2 py-1 text-sm font-semibold focus:border-black focus:outline-none"
+            value={row.role}
+            onChange={(e) => update(i, { role: e.target.value })}
+          />
+          <div className="grid gap-2 sm:grid-cols-3">
+            <input
+              placeholder="Company"
+              className="border border-neutral-300 px-2 py-1 text-xs focus:border-black focus:outline-none"
+              value={row.company}
+              onChange={(e) => update(i, { company: e.target.value })}
+            />
+            <input
+              placeholder="Location"
+              className="border border-neutral-300 px-2 py-1 text-xs focus:border-black focus:outline-none"
+              value={row.location ?? ''}
+              onChange={(e) => update(i, { location: e.target.value })}
+            />
+            <input
+              placeholder="Dates"
+              className="border border-neutral-300 px-2 py-1 text-xs focus:border-black focus:outline-none"
+              value={row.period}
+              onChange={(e) => update(i, { period: e.target.value })}
+            />
+          </div>
+          <textarea
+            placeholder="Bullets (one per line, optional • prefix)"
+            className="min-h-[80px] w-full border border-neutral-300 p-2 text-xs focus:border-black focus:outline-none"
+            value={row.desc}
+            onChange={(e) => update(i, { desc: e.target.value })}
+          />
+          <button
+            type="button"
+            className="text-xs text-red-600 hover:underline"
+            onClick={() => setDraft((d) => d.filter((_, j) => j !== i))}
+          >
+            Remove role
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="flex items-center gap-1 text-xs font-semibold uppercase text-neutral-700 hover:text-black"
+        onClick={() =>
+          setDraft((d) => [...d, { role: '', company: '', period: '', desc: '', location: '' }])
+        }
+      >
+        <Plus className="h-3 w-3" /> Add role
+      </button>
+      <div className="flex gap-2 pt-2">
+        <button
+          type="button"
+          className="border border-black bg-black px-4 py-2 text-xs font-semibold uppercase text-white"
+          onClick={() => onSave(draft)}
+        >
+          Save
+        </button>
+        <button type="button" className="text-xs text-neutral-600" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function EducationEditor({
+  items,
+  onCancel,
+  onSave,
+}: {
+  items: EducationItem[]
+  onCancel: () => void
+  onSave: (items: EducationItem[]) => void
+}) {
+  const [draft, setDraft] = useState(JSON.parse(JSON.stringify(items)) as EducationItem[])
+  const update = (i: number, patch: Partial<EducationItem>) => {
+    setDraft((d) => d.map((row, j) => (j === i ? { ...row, ...patch } : row)))
+  }
+  const uploadImage = (i: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) update(i, { image: URL.createObjectURL(file) })
+  }
+  return (
+    <div className="space-y-6 border border-neutral-200 p-4">
+      {draft.map((row, i) => (
+        <div key={i} className="space-y-2 border-b border-neutral-100 pb-4 last:border-0">
+          <input
+            placeholder="Degree"
+            className="w-full border border-neutral-300 px-2 py-1 text-sm font-semibold focus:border-black focus:outline-none"
+            value={row.degree}
+            onChange={(e) => update(i, { degree: e.target.value })}
+          />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input
+              placeholder="School"
+              className="border border-neutral-300 px-2 py-1 text-xs focus:border-black focus:outline-none"
+              value={row.school}
+              onChange={(e) => update(i, { school: e.target.value })}
+            />
+            <input
+              placeholder="Years"
+              className="border border-neutral-300 px-2 py-1 text-xs focus:border-black focus:outline-none"
+              value={row.years}
+              onChange={(e) => update(i, { years: e.target.value })}
+            />
+          </div>
+          <textarea
+            placeholder="Notes / honors (optional)"
+            className="min-h-[50px] w-full border border-neutral-300 p-2 text-xs focus:border-black focus:outline-none"
+            value={row.desc ?? ''}
+            onChange={(e) => update(i, { desc: e.target.value })}
+          />
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-neutral-600 hover:text-black">
+            <ImageIcon className="h-4 w-4" />
+            Certificate image
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadImage(i, e)} />
+          </label>
+          {row.image && <img src={row.image} alt="" className="max-h-32 border object-contain" />}
+          <button
+            type="button"
+            className="text-xs text-red-600"
+            onClick={() => setDraft((d) => d.filter((_, j) => j !== i))}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="flex items-center gap-1 text-xs font-semibold uppercase"
+        onClick={() => setDraft((d) => [...d, { degree: '', school: '', years: '' }])}
+      >
+        <Plus className="h-3 w-3" /> Add education
+      </button>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="border border-black bg-black px-4 py-2 text-xs font-semibold uppercase text-white"
+          onClick={() => onSave(draft)}
+        >
+          Save
+        </button>
+        <button type="button" className="text-xs text-neutral-600" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ProjectsEditor({
+  items,
+  onCancel,
+  onSave,
+}: {
+  items: ProjectItem[]
+  onCancel: () => void
+  onSave: (items: ProjectItem[]) => void
+}) {
+  const [draft, setDraft] = useState(JSON.parse(JSON.stringify(items)) as ProjectItem[])
+  const update = (i: number, patch: Partial<ProjectItem>) => {
+    setDraft((d) => d.map((row, j) => (j === i ? { ...row, ...patch } : row)))
+  }
+  return (
+    <div className="space-y-6 border border-neutral-200 p-4">
+      {draft.map((row, i) => (
+        <div key={i} className="space-y-2 border-b border-neutral-100 pb-4 last:border-0">
+          <input
+            placeholder="Title"
+            className="w-full border border-neutral-300 px-2 py-1 text-sm font-semibold focus:border-black focus:outline-none"
+            value={row.title}
+            onChange={(e) => update(i, { title: e.target.value })}
+          />
+          <textarea
+            placeholder="Description"
+            className="min-h-[60px] w-full border border-neutral-300 p-2 text-xs focus:border-black focus:outline-none"
+            value={row.summary}
+            onChange={(e) => update(i, { summary: e.target.value })}
+          />
+          <input
+            placeholder="Stack (comma-separated)"
+            className="w-full border border-neutral-300 px-2 py-1 text-xs focus:border-black focus:outline-none"
+            value={row.stack.join(', ')}
+            onChange={(e) =>
+              update(i, {
+                stack: e.target.value
+                  .split(',')
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              })
+            }
+          />
+          <input
+            placeholder="URL"
+            className="w-full border border-neutral-300 px-2 py-1 text-xs focus:border-black focus:outline-none"
+            value={row.link}
+            onChange={(e) => update(i, { link: e.target.value })}
+          />
+          <button type="button" className="text-xs text-red-600" onClick={() => setDraft((d) => d.filter((_, j) => j !== i))}>
+            <Trash2 className="mr-1 inline h-3 w-3" />
+            Remove
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="flex items-center gap-1 text-xs font-semibold uppercase"
+        onClick={() => setDraft((d) => [...d, { title: '', summary: '', stack: [], link: '#' }])}
+      >
+        <Plus className="h-3 w-3" /> Add project
+      </button>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="border border-black bg-black px-4 py-2 text-xs font-semibold uppercase text-white"
+          onClick={() => onSave(draft)}
+        >
+          Save
+        </button>
+        <button type="button" className="text-xs text-neutral-600" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function MetricsEditor({
+  metrics,
+  onCancel,
+  onSave,
+}: {
+  metrics: ProfileState['metrics']
+  onCancel: () => void
+  onSave: (m: ProfileState['metrics']) => void
+}) {
+  const [draft, setDraft] = useState(metrics)
+  return (
+    <div className="space-y-2 text-sm">
+      {(['hackerrank', 'kaggle', 'github_commits'] as const).map((k) => (
+        <div key={k}>
+          <label className="text-[10px] font-bold uppercase text-neutral-500">{k.replace(/_/g, ' ')}</label>
+          <input
+            className="mt-0.5 w-full border border-neutral-300 px-2 py-1 focus:border-black focus:outline-none"
+            value={draft[k]}
+            onChange={(e) => setDraft({ ...draft, [k]: e.target.value })}
+          />
+        </div>
+      ))}
+      <div className="flex gap-2 pt-2">
+        <button
+          type="button"
+          className="border border-black bg-black px-4 py-2 text-xs font-semibold uppercase text-white"
+          onClick={() => onSave(draft)}
+        >
+          Save
+        </button>
+        <button type="button" className="text-xs text-neutral-600" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }
