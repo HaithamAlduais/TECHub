@@ -54,14 +54,24 @@ export default function OpportunitiesPage() {
           </p>
         </div>
         
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-6 md:grid-cols-3">
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl flex flex-col justify-between">
             <div>
               <h2 className="text-xl font-semibold mb-2">Resume Onboarding</h2>
               <p className="text-sm text-gray-400 mb-6">Complete your profile setup to unlock accurate role matching and AI extraction features. Track your progress here.</p>
             </div>
-            <Link href="/onboarding" className="inline-flex justify-center rounded-md bg-white px-6 py-2 text-sm font-medium text-black hover:bg-gray-200 transition-colors">
+            <Link href="/onboarding?edit=true" className="inline-flex justify-center rounded-md bg-white px-6 py-2 text-sm font-medium text-black hover:bg-gray-200 transition-colors">
               Go to Onboarding Wizard
+            </Link>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl flex flex-col justify-between">
+            <div>
+              <h2 className="text-xl font-semibold mb-2">My Profile (CV)</h2>
+              <p className="text-sm text-gray-400 mb-6">View, edit, and export your dynamically generated professional CV based on your AI-extracted data.</p>
+            </div>
+            <Link href="/profile" className="inline-flex justify-center rounded-md bg-white px-6 py-2 text-sm font-medium text-black hover:bg-gray-200 transition-colors">
+              View Profile
             </Link>
           </div>
           

@@ -32,11 +32,23 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     fetchProgress()
+    
+    // Check if returning from GitHub OAuth
+    const searchParams = new URLSearchParams(window.location.search)
+    if (searchParams.get('github') === 'true') {
+      setGithubConnected(true)
+      window.history.replaceState({}, '', '/onboarding')
+    }
   }, [])
 
   const fetchProgress = async () => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return router.push('/login')
+
+    const providers = session.user?.app_metadata?.providers || []
+    if (providers.includes('github')) {
+      setGithubConnected(true)
+    }
 
     try {
       const res = await fetch(`${API_BASE}/onboarding/progress`, {
@@ -44,13 +56,22 @@ export default function OnboardingPage() {
       })
       if (res.ok) {
         const data = await res.json()
-        setCurrentStep(data.current_step || 1)
-        if (data.is_completed) {
-          router.push('/profile') 
+        
+        const searchParams = new URLSearchParams(window.location.search)
+        const isEditMode = searchParams.get('edit') === 'true' || searchParams.get('github') === 'true'
+
+        if (isEditMode) {
+          setCurrentStep(1)
+        } else {
+          setCurrentStep(data.current_step || 1)
+          if (data.is_completed) {
+            router.push('/profile') 
+            return
+          }
         }
         
         if (data.steps?.['1']) {
-          setGithubConnected(data.steps['1'].github_connected)
+          setGithubConnected(prev => prev || data.steps['1'].github_connected)
           setLinkedinUploaded(data.steps['1'].linkedin_uploaded)
         }
       }
@@ -59,6 +80,16 @@ export default function OnboardingPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const connectGithub = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: {
+        scopes: 'read:user repo',
+        redirectTo: `${window.location.origin}/auth/callback?next=/onboarding?github=true`
+      }
+    })
   }
 
   const saveStep = async (stepNum: number, dataPayload: any) => {
@@ -82,7 +113,7 @@ export default function OnboardingPage() {
       }
       
       const resData = await res.json()
-      setCurrentStep(resData.current_step)
+      setCurrentStep(stepNum + 1) // Force progression to next step for proper UI rendering
       
     } catch (err: any) {
       setError(err.message)
@@ -128,9 +159,38 @@ export default function OnboardingPage() {
     }
   }, [currentStep])
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setSaving(true)
+    setError(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error("Not authenticated")
+
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch('/api/parse-cv', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        },
+        body: formData
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.error || "Failed to parse PDF")
+      }
+
       setLinkedinUploaded(true)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -150,10 +210,11 @@ export default function OnboardingPage() {
       <div className="relative w-full max-w-4xl space-y-8 rounded-none border-2 border-white/20 bg-[#0a0a0a] p-8 md:p-12 shadow-[8px_8px_0px_0px_rgba(255,255,255,0.1)]">
         
         <button 
-          onClick={() => router.push('/')}
-          className="absolute top-4 right-4 md:top-6 md:right-6 text-red-500 hover:bg-red-500/10 p-2 rounded-none transition-colors group z-50"
+          onClick={() => router.push('/opportunities')}
+          className="absolute top-4 right-4 md:top-6 md:right-6 text-white/50 hover:text-white uppercase font-mono text-xs md:text-sm tracking-widest p-2 transition-colors z-50 flex items-center gap-2"
         >
-          <X className="w-8 h-8 group-hover:scale-110 transition-transform" />
+          <LayoutDashboard className="w-4 h-4" />
+          Dashboard
         </button>
         
         {/* Progress Tracker */}
@@ -177,7 +238,7 @@ export default function OnboardingPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* GitHub Card */}
               <button 
-                onClick={() => setGithubConnected(!githubConnected)}
+                onClick={connectGithub}
                 className={`flex flex-col items-center justify-center p-8 md:p-12 border-2 transition-colors duration-200 ${
                   githubConnected 
                   ? 'border-accent bg-accent/20 text-accent' 
@@ -206,19 +267,13 @@ export default function OnboardingPage() {
               </label>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-4 pt-4">
-              <button
-                onClick={() => router.push('/')}
-                className="w-full sm:w-1/3 py-4 text-xl border-2 border-white/20 tracking-widest uppercase font-bold text-white/50 hover:bg-white/10 hover:text-white transition-colors"
-              >
-                Back
-              </button>
+            <div className="flex flex-col gap-4 pt-4">
               <button
                 onClick={handleNextStep1}
                 disabled={saving}
-                className="w-full sm:w-2/3 py-4 text-xl md:text-2xl border-2 border-accent uppercase tracking-widest font-bold flex items-center justify-center gap-3 transition-colors bg-accent text-black hover:bg-accent/80 hover:border-accent/80 disabled:opacity-50"
+                className="w-full py-4 text-xl md:text-2xl border-2 border-accent uppercase tracking-widest font-bold flex items-center justify-center gap-3 transition-colors bg-accent text-black hover:bg-accent/80 hover:border-accent/80 disabled:opacity-50"
               >
-                {saving ? 'Saving...' : 'Next Step (Dev Skip)'}
+                {saving ? 'Saving...' : 'Next Step'}
                 {!saving && <ArrowRight className="w-6 h-6" />}
               </button>
             </div>

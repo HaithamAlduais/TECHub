@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { CheckCircle, ExternalLink, Pen, Download, RotateCcw, X, Image as ImageIcon } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { CheckCircle, ExternalLink, Pen, Download, RotateCcw, X, Image as ImageIcon, Github } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
 
@@ -39,18 +39,117 @@ export default function ProfileDashboard() {
   const [profile, setProfile] = useState(INITIAL_PROFILE)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [refreshCooldown, setRefreshCooldown] = useState(false)
+  const [isConnectingGithub, setIsConnectingGithub] = useState(false)
+
+  useEffect(() => {
+    const loadProfileData = async () => {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+
+        if (session) {
+          const { data: devData } = await supabase
+            .from('developers')
+            .select('cv_data')
+            .eq('id', session.user.id)
+            .single()
+
+          if (devData && devData.cv_data) {
+            setProfile(prev => ({
+              ...prev,
+              ...devData.cv_data
+            }))
+          }
+        }
+
+        if (session?.provider_token) {
+          setIsConnectingGithub(true)
+          const [reposRes, userRes] = await Promise.all([
+            fetch('https://api.github.com/user/repos?visibility=public&sort=updated&per_page=10', {
+              headers: {
+                Authorization: `Bearer ${session.provider_token}`,
+                Accept: 'application/vnd.github.v3+json',
+              },
+            }),
+            fetch('https://api.github.com/user', {
+              headers: {
+                Authorization: `Bearer ${session.provider_token}`,
+                Accept: 'application/vnd.github.v3+json',
+              },
+            })
+          ])
+
+          const repos = await reposRes.json()
+          const userData = await userRes.json()
+
+          setProfile(prev => {
+            const updatedProfile = { ...prev }
+
+            if (Array.isArray(repos) && repos.length > 0) {
+              updatedProfile.projects = repos.map((repo: any) => ({
+                title: repo.name,
+                summary: repo.description || "No description provided.",
+                stack: repo.language ? [repo.language] : [],
+                link: repo.html_url
+              }))
+            }
+
+            if (userData?.login) {
+              const githubUrl = `github.com/${userData.login}`
+              updatedProfile.socials = prev.socials.map(s =>
+                s.includes('github.com') ? githubUrl : s
+              )
+              if (!prev.socials.some(s => s.includes('github.com'))) {
+                updatedProfile.socials.push(githubUrl)
+              }
+            }
+
+            if (userData?.public_repos !== undefined) {
+              updatedProfile.metrics = {
+                ...prev.metrics,
+                github_commits: `${userData.public_repos} Repos`
+              }
+            }
+
+            return updatedProfile
+          })
+        }
+      } catch (error) {
+        console.error("Failed to fetch pinned repos:", error)
+      } finally {
+        setIsConnectingGithub(false)
+        const searchParams = new URLSearchParams(window.location.search)
+        if (searchParams.get('github') === 'true') {
+          window.history.replaceState({}, '', '/profile')
+        }
+      }
+    }
+
+    loadProfileData()
+  }, [])
+
+  const connectGithub = async () => {
+    const supabase = createClient()
+    await supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: {
+        scopes: 'read:user repo',
+        redirectTo: `${window.location.origin}/auth/callback?next=/profile?github=true`
+      }
+    })
+  }
 
   // Edit Modals State
   const [editingHeader, setEditingHeader] = useState(false)
   const [editingSkills, setEditingSkills] = useState(false)
   const [editingKnowledge, setEditingKnowledge] = useState<number | null>(null)
-  
+
   // Temp Edit States
   const [newSkill, setNewSkill] = useState("")
 
   const triggerRefresh = () => {
     setRefreshCooldown(true)
-    setTimeout(() => setRefreshCooldown(false), 3000) 
+    setTimeout(() => setRefreshCooldown(false), 3000)
   }
 
   const handleProfileImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -101,7 +200,7 @@ export default function ProfileDashboard() {
 
   return (
     <div className="min-h-screen bg-[#050505] text-white font-sans pb-32">
-      
+
       {/* Top Navigation */}
       <nav className="border-b-4 border-[rgba(255,255,255,0.1)] bg-[#0a0a0a] sticky top-0 z-40 shadow-xl">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -112,7 +211,7 @@ export default function ProfileDashboard() {
             <span className="text-2xl font-black tracking-widest uppercase font-mono shadow-black drop-shadow-md">TECHub</span>
           </Link>
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={triggerRefresh}
               disabled={refreshCooldown}
               className="flex items-center gap-2 px-6 py-3 border-2 border-[rgba(255,255,255,0.2)] bg-black text-xs md:text-sm font-mono font-bold uppercase hover:bg-[rgba(255,255,255,0.1)] disabled:opacity-50 disabled:cursor-not-allowed shadow-[4px_4px_0px_0px_rgba(255,255,255,0.1)] active:translate-y-1 active:shadow-none transition-all"
@@ -121,20 +220,20 @@ export default function ProfileDashboard() {
               {refreshCooldown ? 'Cooldown (6d 23h)' : 'Refresh APIs'}
             </button>
             <Link href="/opportunities" className="rounded-none border-2 border-[#3b82f6] bg-[#3b82f6] text-black px-6 py-3 text-xs md:text-sm font-black font-mono uppercase hover:bg-[#60a5fa] shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] active:translate-y-1 active:shadow-none transition-all">
-              Go to Feed
+              Back to Dashboard
             </Link>
           </div>
         </div>
       </nav>
 
       <main className="mx-auto max-w-7xl px-4 py-16">
-        
+
         {/* HEADER SECTION (ULTRA PREMIUM BRUTALIST) */}
         <section className="relative flex flex-col xl:flex-row gap-10 items-start mb-32 p-10 md:p-14 border-[6px] border-[rgba(255,255,255,0.1)] bg-[#0a0a0a] shadow-[16px_16px_0px_0px_rgba(255,255,255,0.05)] group">
           <button onClick={() => setEditingHeader(true)} className="absolute top-6 right-6 p-4 border-4 border-[rgba(255,255,255,0.2)] bg-black hover:border-[#3b82f6] hover:bg-[#3b82f6]/10 rounded-none hidden group-hover:block transition-all z-10 shadow-[4px_4px_0px_0px_rgba(255,255,255,0.1)]">
             <Pen className="w-6 h-6 text-gray-400 group-hover:text-[#60a5fa]" />
           </button>
-          
+
           <label className="w-48 h-48 border-4 border-dashed border-[rgba(255,255,255,0.3)] bg-black flex flex-col items-center justify-center text-gray-500 shrink-0 hover:border-[#3b82f6] hover:text-[#60a5fa] cursor-pointer transition-all relative overflow-hidden group/image shadow-[inset_0_0_30px_rgba(0,0,0,1)]">
             <input type="file" accept="image/*" className="hidden" onChange={handleProfileImageUpload} />
             {profile.profileImage ? (
@@ -146,7 +245,7 @@ export default function ProfileDashboard() {
               <Pen className="w-10 h-10 text-white" />
             </div>
           </label>
-          
+
           <div className="flex-1 mt-2">
             <h1 className="text-6xl md:text-7xl font-black uppercase tracking-tighter mb-4 text-transparent bg-clip-text bg-gradient-to-r from-white to-[#60a5fa] leading-none drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]">{profile.name}</h1>
             <p className="text-3xl text-[#60a5fa] font-mono font-bold mb-8 tracking-tight drop-shadow-md">{profile.title}</p>
@@ -158,14 +257,14 @@ export default function ProfileDashboard() {
 
           {/* Export Action CTA - EXACT TEAM 1 REQUIREMENTS */}
           <div className="w-full xl:w-auto mt-12 xl:mt-0 relative shrink-0">
-            <button 
+            <button
               onClick={() => setDropdownOpen(!dropdownOpen)}
               className="w-full xl:w-[340px] flex flex-col items-center justify-center gap-3 bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-black uppercase tracking-[0.15em] px-8 py-8 border-[6px] border-white shadow-[12px_12px_0px_0px_rgba(255,255,255,0.2)] hover:shadow-[12px_12px_0px_0px_rgba(255,255,255,0.05)] active:translate-y-2 active:shadow-none transition-all group"
             >
               <Download className="w-10 h-10 mb-2 group-hover:-translate-y-1 transition-transform" />
-              <span className="text-2xl text-center leading-tight">Export<br/>ATS CV</span>
+              <span className="text-2xl text-center leading-tight">Export<br />ATS CV</span>
             </button>
-            
+
             {dropdownOpen && (
               <div className="absolute top-full mt-6 right-0 w-full bg-[#0a0a0a] border-[6px] border-[#3b82f6] shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] z-20 flex flex-col font-mono text-base uppercase font-bold">
                 <div className="p-6 border-b-[4px] border-[#3b82f6] bg-[#2563eb] text-white font-black flex items-center justify-center gap-3 tracking-[0.2em] shadow-inner">
@@ -180,13 +279,13 @@ export default function ProfileDashboard() {
         </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-20 gap-y-24">
-          
+
           {/* LEFT COLUMN: Main Timelines & Projects */}
           <div className="lg:col-span-7 space-y-24">
-            
+
             {/* WORK HISTORY MAP */}
             <section className="relative">
-              <SectionHeader title="Work History" onEdit={() => {}} />
+              <SectionHeader title="Work History" onEdit={() => { }} />
               {/* Continuous vertical timeline track */}
               <div className="absolute left-[38px] top-[140px] bottom-10 w-[4px] bg-[rgba(255,255,255,0.05)]" />
 
@@ -195,14 +294,14 @@ export default function ProfileDashboard() {
                   <div key={i} className="relative pl-16 group hover:-translate-y-1 transition-transform">
                     {/* Retro chunky node explicitly mounted on the timeline */}
                     <div className="absolute w-6 h-6 bg-white top-2 left-[27px] outline outline-[10px] outline-[#050505] group-hover:bg-[#3b82f6] transition-colors shadow-[0_0_20px_rgba(255,255,255,0.5)] group-hover:shadow-[0_0_20px_rgba(59,130,246,0.8)] z-10" />
-                    
+
                     <h3 className="text-4xl md:text-5xl font-black uppercase tracking-tighter mb-4 text-white drop-shadow-sm">{exp.role}</h3>
-                    
+
                     <div className="flex flex-col sm:flex-row sm:items-center text-sm md:text-lg font-mono font-bold text-[#60a5fa] mb-6 bg-[#0a0a0a] border-[3px] border-[rgba(255,255,255,0.1)] border-l-[6px] border-l-[#2563eb] p-4 shadow-[6px_6px_0px_0px_rgba(0,0,0,0.5)]">
                       <span className="uppercase tracking-widest">{exp.company}</span>
                       <span className="sm:ml-auto text-gray-500 tracking-wider mt-2 sm:mt-0">{exp.years}</span>
                     </div>
-                    
+
                     <p className="text-gray-400 leading-relaxed text-xl font-medium tracking-wide border-l-4 border-transparent hover:border-[rgba(255,255,255,0.1)] pl-4 transition-all">{exp.desc}</p>
                   </div>
                 ))}
@@ -222,16 +321,16 @@ export default function ProfileDashboard() {
                     </button>
                     {/* Fixed blue Square node */}
                     <div className="absolute w-6 h-6 bg-[#2563eb] top-2 left-[27px] shadow-[0_0_25px_rgba(37,99,235,1)] outline outline-[10px] outline-[#050505] z-10 group-hover:bg-[#60a5fa]" />
-                    
+
                     <h3 className="text-3xl md:text-4xl font-black uppercase tracking-tighter mb-4 pr-20 text-white drop-shadow-sm leading-tight">{edu.degree}</h3>
-                    
+
                     <div className="flex flex-col sm:flex-row sm:items-center text-sm md:text-lg font-mono font-bold text-gray-300 mb-5 uppercase bg-[#0a0a0a] border-[3px] border-[rgba(255,255,255,0.1)] border-l-[6px] border-l-[#60a5fa] p-4 shadow-[6px_6px_0px_0px_rgba(0,0,0,0.5)]">
                       <span className="tracking-widest">{edu.school}</span>
                       <span className="sm:ml-auto text-gray-500 tracking-wider mt-2 sm:mt-0">{edu.years}</span>
                     </div>
-                    
+
                     {edu.desc && <p className="text-gray-400 text-lg mb-6 italic tracking-wide pl-4 border-l-4 border-transparent group-hover:border-[rgba(255,255,255,0.1)] transition-all">{edu.desc}</p>}
-                    
+
                     {edu.image && (
                       <div className="mt-6 border-4 border-[#3b82f6] p-2 max-w-[300px] bg-black shadow-[8px_8px_0px_0px_rgba(0,0,0,0.5)] group-hover:shadow-[8px_8px_0px_0px_rgba(59,130,246,0.3)] transition-all">
                         <img src={edu.image} alt="Certificate" className="w-full h-auto grayscale group-hover:grayscale-0 transition-all duration-500" />
@@ -250,14 +349,14 @@ export default function ProfileDashboard() {
             {/* SKILLS SET MATRIX */}
             <section>
               <SectionHeader title="Skills Matrix" onEdit={() => setEditingSkills(true)} />
-              
+
               <div className="mt-12 bg-[#0a0a0a] p-10 border-[6px] border-[rgba(255,255,255,0.1)] shadow-[12px_12px_0px_0px_rgba(34,197,94,0.15)] relative overflow-hidden group hover:border-[#22c55e]/50 transition-colors">
                 <div className="absolute top-0 right-0 w-48 h-48 bg-[#22c55e]/10 blur-[80px] rounded-full point-events-none transition-opacity duration-1000 group-hover:bg-[#22c55e]/20" />
-                
+
                 <h3 className="text-base font-black font-mono uppercase text-[#4ade80] mb-8 flex items-center gap-4 tracking-[0.2em] border-b-4 border-[#22c55e]/30 pb-4 drop-shadow-[0_0_10px_rgba(34,197,94,0.5)]">
                   <CheckCircle className="w-6 h-6" /> AI-Verified Set
                 </h3>
-                
+
                 {/* As per user Team 1 rule: "Verified Skills (Blue/Green Tags with a checkmark)" */}
                 <div className="flex flex-wrap gap-4 relative z-10">
                   {profile.skills.verified.map(skill => (
@@ -272,7 +371,7 @@ export default function ProfileDashboard() {
                 <h3 className="text-base font-black font-mono uppercase text-gray-500 mb-8 flex items-center gap-4 tracking-[0.2em] border-b-4 border-[rgba(255,255,255,0.1)] pb-4">
                   Manual Unverified
                 </h3>
-                
+
                 {/* As per user Team 1 rule: "Unverified Skills (White/Gray Tags, muted)" */}
                 <div className="flex flex-wrap gap-3 relative z-10">
                   {profile.skills.unverified.map(skill => (
@@ -286,8 +385,24 @@ export default function ProfileDashboard() {
 
             {/* PROJECTS SECTION */}
             <section>
-              <SectionHeader title="Projects Grid" onEdit={() => {}} />
-              <div className="mt-12 space-y-8">
+              <SectionHeader title="Projects Grid" onEdit={() => { }} />
+
+              <div className="mb-8 mt-4 relative flex justify-end">
+                <button
+                  onClick={connectGithub}
+                  disabled={isConnectingGithub}
+                  className="flex items-center gap-3 px-6 py-4 bg-black text-white border-[4px] border-[rgba(255,255,255,0.2)] hover:border-[#3b82f6] font-mono font-black uppercase transition-all shadow-[6px_6px_0_0_rgba(255,255,255,0.1)] hover:shadow-[6px_6px_0_0_rgba(59,130,246,0.3)] active:translate-y-1 active:shadow-none group disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isConnectingGithub ? (
+                    <RotateCcw className="w-6 h-6 animate-spin text-[#60a5fa]" />
+                  ) : (
+                    <Github className="w-6 h-6 text-gray-400 group-hover:text-[#60a5fa]" />
+                  )}
+                  {isConnectingGithub ? "Syncing Repos..." : (profile.projects.length > 0 ? "Sync GitHub" : "Connect GitHub")}
+                </button>
+              </div>
+
+              <div className="space-y-8">
                 {profile.projects.map((proj, i) => (
                   <div key={i} className="border-[6px] border-[rgba(255,255,255,0.1)] p-8 bg-[#0a0a0a] hover:border-[#3b82f6]/60 transition-all flex flex-col h-full shadow-[8px_8px_0px_0px_rgba(255,255,255,0.05)] hover:shadow-[12px_12px_0px_0px_rgba(59,130,246,0.3)] hover:-translate-x-2 group">
                     <div className="flex justify-between items-start mb-6">
@@ -341,15 +456,15 @@ export default function ProfileDashboard() {
             <div className="space-y-8 font-mono text-sm uppercase font-bold text-gray-400">
               <div className="space-y-3">
                 <label className="block pl-1 tracking-widest text-[#60a5fa]">Full Name</label>
-                <input type="text" value={profile.name} onChange={(e) => setProfile({...profile, name: e.target.value})} className="w-full bg-black border-4 border-[rgba(255,255,255,0.2)] p-5 text-white focus:outline-none focus:border-[#3b82f6] transition-colors text-xl font-sans font-black" />
+                <input type="text" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} className="w-full bg-black border-4 border-[rgba(255,255,255,0.2)] p-5 text-white focus:outline-none focus:border-[#3b82f6] transition-colors text-xl font-sans font-black" />
               </div>
               <div className="space-y-3">
                 <label className="block pl-1 tracking-widest text-[#60a5fa]">Job Title</label>
-                <input type="text" value={profile.title} onChange={(e) => setProfile({...profile, title: e.target.value})} className="w-full bg-black border-4 border-[rgba(255,255,255,0.2)] p-5 text-white focus:outline-none focus:border-[#3b82f6] transition-colors text-xl font-sans font-black" />
+                <input type="text" value={profile.title} onChange={(e) => setProfile({ ...profile, title: e.target.value })} className="w-full bg-black border-4 border-[rgba(255,255,255,0.2)] p-5 text-white focus:outline-none focus:border-[#3b82f6] transition-colors text-xl font-sans font-black" />
               </div>
               <div className="space-y-3">
                 <label className="block pl-1 tracking-widest text-[#60a5fa]">Social Links (Comma separated)</label>
-                <input type="text" value={profile.socials.join(", ")} onChange={(e) => setProfile({...profile, socials: e.target.value.split(",").map(s => s.trim())})} className="w-full bg-black border-4 border-[rgba(255,255,255,0.2)] p-5 text-gray-300 focus:outline-none focus:border-[#3b82f6] transition-colors text-lg normal-case font-mono" placeholder="twitter.com/dev, instagr.am/dev" />
+                <input type="text" value={profile.socials.join(", ")} onChange={(e) => setProfile({ ...profile, socials: e.target.value.split(",").map(s => s.trim()) })} className="w-full bg-black border-4 border-[rgba(255,255,255,0.2)] p-5 text-gray-300 focus:outline-none focus:border-[#3b82f6] transition-colors text-lg normal-case font-mono" placeholder="twitter.com/dev, instagr.am/dev" />
               </div>
               <button onClick={() => setEditingHeader(false)} className="w-full bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-black uppercase p-8 mt-10 transition-colors border-[6px] border-white text-2xl tracking-[0.2em] shadow-[8px_8px_0px_0px_rgba(255,255,255,0.2)] active:translate-y-2 active:shadow-none">Save Changes</button>
             </div>
@@ -365,7 +480,7 @@ export default function ProfileDashboard() {
             </button>
             <h2 className="text-4xl font-black uppercase mb-6 font-mono tracking-tight text-[#60a5fa]">Manual Skills Input</h2>
             <p className="text-gray-400 text-base mb-10 font-mono leading-relaxed bg-[#111] p-6 border-l-[6px] border-[#3b82f6]">User-added skills will strictly format to the standard Unverified gray block. Only our AI matrix crawler upgrades them to Green/Verified tags.</p>
-            
+
             <form onSubmit={handleAddSkill} className="flex gap-4 font-mono mb-12">
               <input type="text" value={newSkill} onChange={(e) => setNewSkill(e.target.value)} className="flex-1 bg-black border-4 border-[rgba(255,255,255,0.2)] p-5 text-white focus:outline-none focus:border-[#3b82f6] transition-colors text-xl" placeholder="Type a new skill (e.g., Ruby)..." />
               <button type="submit" className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white border-4 border-white px-10 font-black uppercase tracking-[0.2em] text-xl shadow-[6px_6px_0px_0px_rgba(255,255,255,0.2)] active:translate-y-1 active:shadow-none transition-all">Add</button>
@@ -375,7 +490,7 @@ export default function ProfileDashboard() {
               {profile.skills.unverified.map((skill, idx) => (
                 <span key={idx} className="inline-flex items-center gap-4 px-5 py-3 bg-[#111] border-2 border-[rgba(255,255,255,0.2)] text-gray-300 text-lg font-bold font-mono group">
                   {skill}
-                  <button 
+                  <button
                     onClick={() => setProfile(prev => ({ ...prev, skills: { ...prev.skills, unverified: prev.skills.unverified.filter((_, i) => i !== idx) } }))}
                     className="p-1.5 bg-black hover:bg-red-500 text-gray-500 hover:text-white border-2 border-[rgba(255,255,255,0.1)] transition-colors"
                   >
@@ -402,7 +517,7 @@ export default function ProfileDashboard() {
                 <p className="text-[#60a5fa] font-black text-2xl mb-3 uppercase tracking-tighter pl-6">{profile.education[editingKnowledge].degree}</p>
                 <p className="text-gray-400 font-bold uppercase tracking-widest pl-6">{profile.education[editingKnowledge].school}</p>
               </div>
-              
+
               <label className="flex flex-col items-center justify-center p-16 border-[6px] border-dashed border-[rgba(255,255,255,0.2)] cursor-pointer hover:border-[#3b82f6] hover:bg-[#3b82f6]/5 transition-all group bg-[#111] shadow-[inset_0_0_30px_rgba(0,0,0,1)]">
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => handleKnowledgeImageUpload(e, editingKnowledge)} />
                 <ImageIcon className="w-16 h-16 mb-8 text-gray-500 group-hover:text-[#60a5fa] transition-colors" />
